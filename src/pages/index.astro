@@ -1,0 +1,135 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navigation from '../components/Navigation.astro';
+import Footer from '../components/Footer.astro';
+import { ADDRESS, ASSOCIATION, FY_LABEL } from '../lib/constants';
+import { getLoginLockRemaining } from '../lib/auth';
+
+if (Astro.locals.session) {
+  return Astro.redirect('/ledger');
+}
+
+const lockRemaining = await getLoginLockRemaining(Astro.request);
+const locked = lockRemaining > 0;
+const invalid = Astro.url.searchParams.get('error') === '1' || locked;
+const lockLabel = locked
+  ? `Try again in ${Math.floor(lockRemaining / 60)}:${String(lockRemaining % 60).padStart(2, '0')}`
+  : 'Enter ledger';
+---
+
+<Layout title="Debaloy — Enter access password">
+  <Navigation />
+  <main id="main" class="relative overflow-hidden">
+    <div class="pointer-events-none absolute inset-x-0 top-0 h-80 opacity-25 blur-3xl gradient-mesh dark:opacity-30" aria-hidden="true"></div>
+    <section class="relative mx-auto flex min-h-[calc(100vh-8rem)] max-w-lg flex-col justify-center px-4 py-16 sm:px-6">
+      <p class="text-center font-mono text-xs uppercase tracking-[0.2em] text-mute dark:text-slate-400">
+        {FY_LABEL}
+      </p>
+      <h1 class="mt-4 text-center text-4xl font-semibold tracking-tight text-ink dark:text-slate-100 sm:text-5xl">
+        The building ledger.
+      </h1>
+      <p class="mx-auto mt-4 max-w-md text-center text-sm leading-6 text-body dark:text-slate-300">
+        {ASSOCIATION}. {ADDRESS}.
+      </p>
+
+      <form
+        id="login-form"
+        method="post"
+        action="/api/login"
+        class="card-elevate mt-10 rounded-xl bg-canvas p-5 dark:bg-slate-900 sm:p-8"
+      >
+        <label for="password" class="block text-sm font-medium text-ink dark:text-slate-100">
+          Access password
+        </label>
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          spellcheck="false"
+          required
+          disabled={locked}
+          placeholder="Enter the building password…"
+          class="mt-2 h-12 w-full rounded-md border border-hairline bg-canvas px-3 text-base text-ink disabled:cursor-not-allowed disabled:opacity-70 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+        />
+        {invalid && (
+          <p class="mt-3 text-sm text-error" role="alert">
+            That password is not recognised. Try again after some time.
+          </p>
+        )}
+        <button
+          type="submit"
+          id="login-submit"
+          disabled={locked}
+          data-lock-remaining={locked ? String(lockRemaining) : '0'}
+          class="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-pill bg-primary text-base font-medium text-on-primary transition-opacity duration-200 hover:opacity-90 disabled:pointer-events-none disabled:opacity-70 dark:bg-slate-100 dark:text-slate-950"
+        >
+          <svg class="js-spinner hidden h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"></circle>
+            <path fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" class="opacity-75"></path>
+          </svg>
+          <span class="js-label">{lockLabel}</span>
+        </button>
+        <p id="login-status" class="sr-only" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+  <Footer />
+  <script is:inline>
+    (() => {
+      const form = document.getElementById('login-form');
+      const button = document.getElementById('login-submit');
+      const password = document.getElementById('password');
+      const label = button?.querySelector('.js-label');
+      const spinner = button?.querySelector('.js-spinner');
+      const status = document.getElementById('login-status');
+      if (!form || !button || !label) return;
+
+      const formatLock = (seconds) => {
+        const safe = Math.max(0, seconds);
+        const minutes = Math.floor(safe / 60);
+        const rest = String(safe % 60).padStart(2, '0');
+        return `Try again in ${minutes}:${rest}`;
+      };
+
+      const remaining = Number(button.getAttribute('data-lock-remaining') || '0');
+      if (remaining > 0) {
+        const endsAt = Date.now() + remaining * 1000;
+        const tick = () => {
+          const left = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+          label.textContent = formatLock(left);
+          if (status) status.textContent = formatLock(left);
+          if (left > 0) return;
+          window.clearInterval(timer);
+          button.disabled = false;
+          button.removeAttribute('data-lock-remaining');
+          password?.removeAttribute('disabled');
+          label.textContent = 'Enter ledger';
+          if (status) status.textContent = 'You can try again.';
+        };
+        tick();
+        const timer = window.setInterval(tick, 250);
+      }
+
+      form.addEventListener('submit', (event) => {
+        if (button.disabled || Number(button.getAttribute('data-lock-remaining') || '0') > 0) {
+          event.preventDefault();
+          return;
+        }
+        button.disabled = true;
+        button.setAttribute('aria-busy', 'true');
+        spinner?.classList.remove('hidden');
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const frames = ['Logging in.', 'Logging in..', 'Logging in...'];
+        label.textContent = reduced ? 'Logging in…' : frames[0];
+        if (status) status.textContent = 'Logging in…';
+        if (reduced) return;
+        let frame = 0;
+        window.setInterval(() => {
+          frame = (frame + 1) % frames.length;
+          label.textContent = frames[frame];
+        }, 400);
+      });
+    })();
+  </script>
+</Layout>

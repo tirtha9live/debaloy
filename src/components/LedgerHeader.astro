@@ -1,0 +1,123 @@
+---
+import { withView } from '../lib/auth';
+import { formatUpdatedOn } from '../lib/format';
+import { getLastUpdatedAt } from '../lib/ledger';
+
+interface Props {
+  sheet: string;
+  title: string;
+  subtitle: string;
+  canEdit?: boolean;
+}
+
+const { sheet, title, subtitle, canEdit = false } = Astro.props;
+const session = Astro.locals.session;
+const viewAsResident = Astro.locals.viewAsResident;
+const welcome = session?.role === 'admin' && !viewAsResident ? 'Welcome, treasurer.' : 'Welcome, resident.';
+const lastUpdatedLabel = formatUpdatedOn(await getLastUpdatedAt());
+
+const actionClass =
+  'inline-flex h-11 w-full items-center justify-center gap-2 rounded-pill px-4 text-sm font-medium transition-colors duration-200 lg:h-10 lg:w-auto';
+const ghostClass =
+  'border border-hairline bg-canvas text-ink hover:border-hairline-strong dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
+---
+
+<div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+  <div class="min-w-0">
+    <p class="font-mono text-xs uppercase tracking-[0.18em] text-mute dark:text-slate-400">{welcome}</p>
+    {lastUpdatedLabel && (
+      <p class="mt-2 hidden text-sm text-body lg:block dark:text-slate-300">{lastUpdatedLabel}</p>
+    )}
+    <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink dark:text-slate-100 sm:text-4xl">{title}</h1>
+    <p class="mt-2 max-w-2xl text-sm leading-6 text-pretty text-body dark:text-slate-300">{subtitle}</p>
+  </div>
+  <div class="grid w-full grid-cols-2 gap-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
+    {session?.role === 'admin' && (
+      viewAsResident ? (
+        <a href={Astro.url.pathname} class:list={[actionClass, ghostClass, 'col-span-2 lg:col-span-1']}>
+          Back to treasurer
+        </a>
+      ) : (
+        <a href={withView(Astro.url.pathname, true)} class:list={[actionClass, ghostClass, 'col-span-2 lg:col-span-1']}>
+          View as resident
+        </a>
+      )
+    )}
+    <div class="relative col-span-2 lg:col-auto" id="download-menu">
+      <button
+        type="button"
+        id="download-toggle"
+        class:list={[actionClass, 'bg-primary text-on-primary hover:opacity-90 dark:bg-slate-100 dark:text-slate-950']}
+        aria-haspopup="menu"
+        aria-expanded="false"
+        aria-controls="download-panel"
+      >
+        <svg class="js-spinner hidden h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"></circle>
+          <path fill="currentColor" d="M4 12a8 8 0 018-8v3a5 5 0 00-5 5H4z" class="opacity-75"></path>
+        </svg>
+        <span class="js-label">Download</span>
+        <svg class="js-chevron h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.24a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z" clip-rule="evenodd"></path>
+        </svg>
+      </button>
+      <div
+        id="download-panel"
+        role="menu"
+        aria-label="Download options"
+        class="absolute inset-x-0 z-20 mt-2 hidden overflow-hidden rounded-xl border border-hairline bg-canvas py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 lg:inset-x-auto lg:right-0 lg:w-56"
+      >
+        <a
+          href="/api/export?kind=formatted"
+          role="menuitem"
+          data-excel="formatted"
+          class="flex min-h-11 items-center px-3 text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
+        >
+          Excel formatted
+        </a>
+        <a
+          href="/api/export?kind=raw"
+          role="menuitem"
+          data-excel="raw"
+          class="flex min-h-11 items-center px-3 text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
+        >
+          Excel raw
+        </a>
+        <button
+          type="button"
+          role="menuitem"
+          id="download-img"
+          data-sheet={sheet}
+          class="flex min-h-11 w-full items-center px-3 text-left text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
+        >
+          Image
+        </button>
+      </div>
+    </div>
+    {canEdit && (
+      <button
+        type="submit"
+        form={`${sheet}-form`}
+        class:list={[actionClass, ghostClass, 'col-span-2 max-lg:hidden']}
+      >
+        Save sheet
+      </button>
+    )}
+  </div>
+</div>
+<p id="download-status" class="sr-only" aria-live="polite"></p>
+{canEdit && (
+  <div
+    id="sticky-save-sheet"
+    class="fixed inset-x-0 bottom-0 z-30 border-t border-hairline bg-canvas/95 px-4 pt-3 backdrop-blur lg:hidden dark:border-slate-800 dark:bg-slate-950/95"
+    style="padding-bottom: max(0.75rem, env(safe-area-inset-bottom));"
+  >
+    <button
+      type="submit"
+      form={`${sheet}-form`}
+      class="inline-flex h-12 w-full items-center justify-center rounded-pill bg-primary text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950"
+    >
+      Save sheet
+    </button>
+  </div>
+)}

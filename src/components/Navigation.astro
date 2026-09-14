@@ -1,0 +1,123 @@
+---
+import ThemeToggle from './ThemeToggle.astro';
+import { ASSOCIATION, SHEETS } from '../lib/constants';
+import { withView } from '../lib/auth';
+import { formatUpdatedOn } from '../lib/format';
+import { getLastUpdatedAt } from '../lib/ledger';
+
+interface Props {
+  current?: string;
+}
+
+const { current } = Astro.props;
+const session = Astro.locals.session;
+const viewAsResident = Astro.locals.viewAsResident;
+const roleLabel = session?.role === 'admin' ? (viewAsResident ? 'Resident view' : 'Treasurer') : 'Resident';
+const lastUpdatedLabel = session ? formatUpdatedOn(await getLastUpdatedAt()) : null;
+---
+
+<header class="sticky top-0 z-40 border-b border-hairline bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+  <div class="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
+    <a href={session ? withView('/ledger', viewAsResident) : '/'} class="flex min-w-0 items-center gap-2.5">
+      <svg class="h-8 w-8 shrink-0" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <rect width="32" height="32" rx="8" class="fill-ink dark:fill-slate-100"></rect>
+        <path d="M12 8h6.4c4.5 0 8 3.4 8 8s-3.5 8-8 8H12V8Zm3.1 2.8v10.4h3.3c2.7 0 4.8-2.2 4.8-5.2s-2.1-5.2-4.8-5.2h-3.3Z" class="fill-canvas dark:fill-slate-950"></path>
+      </svg>
+      <span class="min-w-0">
+        <span class="block truncate text-lg font-semibold tracking-tight">
+          Debaloy
+        </span>
+        {lastUpdatedLabel && (
+          <span class="mt-0.5 block truncate text-xs text-body lg:hidden dark:text-slate-300">{lastUpdatedLabel}</span>
+        )}
+      </span>
+    </a>
+
+    <div class="flex shrink-0 items-center gap-2">
+      {session && (
+        <span class="hidden rounded-full bg-canvas-soft px-3 py-1 font-mono text-xs text-body dark:bg-slate-900 dark:text-slate-300 sm:inline">
+          {roleLabel}
+        </span>
+      )}
+      <ThemeToggle />
+      {session && (
+        <form method="post" action="/api/logout">
+          <button
+            type="submit"
+            class="inline-flex h-10 items-center rounded-md border border-hairline bg-canvas px-2.5 text-sm font-medium text-ink transition-colors duration-200 hover:border-hairline-strong sm:px-3 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-slate-500"
+          >
+            Sign out
+          </button>
+        </form>
+      )}
+      {session && (
+        <button
+          type="button"
+          class="mobile-menu-toggle inline-flex h-10 w-10 items-center justify-center rounded-md border border-hairline bg-canvas text-body dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 lg:hidden"
+          aria-label="Open sheet menu"
+          aria-expanded="false"
+          aria-controls="sheet-navigation"
+        >
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+          </svg>
+        </button>
+      )}
+    </div>
+  </div>
+
+  {session && (
+    <nav id="sheet-navigation" class="hidden border-t border-hairline dark:border-slate-800 lg:block" aria-label="Ledger sheets">
+      <div class="mx-auto flex max-h-[70vh] max-w-[1400px] flex-col gap-1 overflow-y-auto px-4 py-2 sm:px-6 lg:max-h-none lg:flex-row lg:overflow-x-auto lg:overflow-y-visible">
+        {SHEETS.map((sheet) => {
+          const active = current === sheet.slug;
+          return (
+            <a
+              href={withView(sheet.href, viewAsResident)}
+              class:list={[
+                'flex min-h-11 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors duration-200',
+                active
+                  ? 'bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950'
+                  : 'text-body hover:bg-canvas-soft hover:text-ink dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white',
+              ]}
+              aria-current={active ? 'page' : undefined}
+            >
+              {sheet.label}
+            </a>
+          );
+        })}
+      </div>
+    </nav>
+  )}
+</header>
+
+{session && (
+  <p class="sr-only">{ASSOCIATION}</p>
+)}
+
+<script is:inline>
+  (() => {
+    const syncThemeButtons = () => {
+      const isDark = document.documentElement.dataset.theme === 'dark';
+      document.querySelectorAll('.theme-toggle').forEach((button) => {
+        button.setAttribute('aria-pressed', String(isDark));
+        button.setAttribute('aria-label', isDark ? 'Switch to light theme' : 'Switch to dark theme');
+      });
+    };
+    document.querySelectorAll('.theme-toggle').forEach((button) => {
+      button.addEventListener('click', () => window.__toggleTheme?.());
+    });
+    const nav = document.getElementById('sheet-navigation');
+    const toggle = document.querySelector('.mobile-menu-toggle');
+    toggle?.addEventListener('click', () => {
+      const open = toggle.getAttribute('aria-expanded') === 'true';
+      const nextOpen = !open;
+      toggle.setAttribute('aria-expanded', String(nextOpen));
+      toggle.setAttribute('aria-label', nextOpen ? 'Close sheet menu' : 'Open sheet menu');
+      nav?.classList.toggle('hidden', !nextOpen);
+      nav?.classList.toggle('lg:block', true);
+    });
+    syncThemeButtons();
+    window.addEventListener('themechange', syncThemeButtons);
+  })();
+</script>

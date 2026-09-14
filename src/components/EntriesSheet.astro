@@ -1,0 +1,230 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navigation from './Navigation.astro';
+import Footer from './Footer.astro';
+import LedgerHeader from './LedgerHeader.astro';
+import { ASSOCIATION, MODES } from '../lib/constants';
+import { displayDate, formatAmount } from '../lib/format';
+import { categoryTotals, loadLedger, namedCategories } from '../lib/ledger';
+import type { CategoryKind } from '../lib/constants';
+
+interface Props {
+  kind: CategoryKind;
+}
+
+const { kind } = Astro.props;
+const snapshot = await loadLedger();
+const canEdit = Astro.locals.canEdit;
+const named = namedCategories(snapshot, kind);
+const totals = categoryTotals(snapshot, kind);
+const hasCustom = totals.some((category) => !category.isBuiltin);
+const entries = snapshot.entries.filter((entry) => entry.kind === kind);
+const grand = totals.reduce((sum, item) => sum + item.total, 0);
+const isIncome = kind === 'income';
+const title = isIncome ? 'Income tracker.' : 'Expense tracker.';
+const subtitle = isIncome
+  ? 'Add every receipt with date, type, and amount. Category totals on the right flow into this year’s account.'
+  : 'Add every expense with date, type, and amount. Category totals on the right flow into this year’s account.';
+---
+
+<Layout title={`${isIncome ? 'Income' : 'Expenses'} · ${ASSOCIATION}`} noindex>
+  <Navigation current={isIncome ? 'income' : 'expenses'} />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet={kind}
+      title={title}
+      subtitle={subtitle}
+    />
+
+    <section id="sheet-capture" class="mt-6 grid gap-6 sm:mt-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+        {!canEdit && (
+          <p class="sheet-swipe-hint px-4 pt-3">Swipe sideways if a row is wider than the screen.</p>
+        )}
+        <div class="sheet-scroll">
+          <table class="sheet-table w-full">
+            <thead class:list={[canEdit && 'max-xl:hidden']}>
+              <tr>
+                <th class="text-left">Date</th>
+                <th class="text-left">{isIncome ? 'Income type' : 'Expense type'}</th>
+                <th class="text-left">Description</th>
+                <th class="text-left">Mode</th>
+                <th class="text-right">Amount (Rs.)</th>
+                {canEdit && <th></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.length === 0 && (
+                <tr>
+                  <td colspan={canEdit ? 6 : 5} class="whitespace-normal text-body dark:text-slate-300">No rows yet.</td>
+                </tr>
+              )}
+              {entries.map((entry) => (
+                <tr>
+                  {canEdit ? (
+                    <td colspan={6} class="p-0">
+                      <form method="post" action="/api/ledger/entries" class="entry-form">
+                        <input type="hidden" name="intent" value="update" />
+                        <input type="hidden" name="kind" value={kind} />
+                        <input type="hidden" name="id" value={entry.id} />
+                        <label class="entry-field">
+                          <span class="entry-label">Date</span>
+                          <input class="sheet-input" type="date" name="date" value={entry.date ?? ''} />
+                        </label>
+                        <label class="entry-field">
+                          <span class="entry-label">Type</span>
+                          <select class="sheet-input" name="category">
+                            {named.map((category) => (
+                              <option value={category.name} selected={category.name === entry.category}>{category.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label class="entry-field entry-field-wide">
+                          <span class="entry-label">Description</span>
+                          <input class="sheet-input" type="text" name="description" value={entry.description} autocomplete="off" />
+                        </label>
+                        <label class="entry-field">
+                          <span class="entry-label">Mode</span>
+                          <select class="sheet-input" name="mode">
+                            {MODES.map((mode) => (
+                              <option value={mode} selected={mode === entry.mode}>{mode}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label class="entry-field">
+                          <span class="entry-label">Amount</span>
+                          <input class="sheet-input text-right" type="text" inputmode="decimal" name="amount" value={String(entry.amount)} autocomplete="off" />
+                        </label>
+                        <div class="entry-actions">
+                          <button type="submit" class="entry-btn border border-hairline dark:border-slate-700">Save</button>
+                          <button type="submit" name="intent" value="delete" class="entry-btn border border-error/30 text-error" onclick="return confirm('Delete this row?')">Delete</button>
+                        </div>
+                      </form>
+                    </td>
+                  ) : (
+                    <>
+                      <td>{displayDate(entry.date)}</td>
+                      <td class="whitespace-normal">{entry.category}</td>
+                      <td class="max-w-xs whitespace-normal">{entry.description}</td>
+                      <td>{entry.mode}</td>
+                      <td class="text-right tabular-nums">{formatAmount(entry.amount)}</td>
+                    </>
+                  )}
+                </tr>
+              ))}
+              {canEdit && (
+                <tr>
+                  <td colspan={6} class="p-0">
+                    <form method="post" action="/api/ledger/entries" class="entry-form border-t border-hairline dark:border-slate-800">
+                      <input type="hidden" name="intent" value="create" />
+                      <input type="hidden" name="kind" value={kind} />
+                      <label class="entry-field">
+                        <span class="entry-label">Date</span>
+                        <input class="sheet-input" type="date" name="date" />
+                      </label>
+                      <label class="entry-field">
+                        <span class="entry-label">Type</span>
+                        <select class="sheet-input" name="category">
+                          {named.map((category) => (
+                            <option value={category.name}>{category.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label class="entry-field entry-field-wide">
+                        <span class="entry-label">Description</span>
+                        <input class="sheet-input" type="text" name="description" placeholder="Description…" autocomplete="off" />
+                      </label>
+                      <label class="entry-field">
+                        <span class="entry-label">Mode</span>
+                        <select class="sheet-input" name="mode">
+                          {MODES.map((mode) => (
+                            <option value={mode}>{mode}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label class="entry-field">
+                        <span class="entry-label">Amount</span>
+                        <input class="sheet-input text-right" type="text" inputmode="decimal" name="amount" placeholder="0.00" autocomplete="off" />
+                      </label>
+                      <div class="entry-actions">
+                        <button type="submit" class="entry-btn bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950">Add row</button>
+                      </div>
+                    </form>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <aside class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+        <form method="post" action="/api/ledger/categories">
+          <input type="hidden" name="kind" value={kind} />
+          <table class="sheet-table w-full">
+            <thead>
+              <tr>
+                <th class="text-left">Category summary</th>
+                <th class="text-right">Total (Rs.)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {totals.map((category) => (
+                <tr>
+                  <td>
+                    {canEdit && !category.isBuiltin ? (
+                      <input
+                        class="sheet-input"
+                        type="text"
+                        name={`name:${category.id}`}
+                        value={category.name}
+                        placeholder="Type name"
+                        autocomplete="off"
+                        aria-label="Custom category name"
+                      />
+                    ) : (
+                      <span class="whitespace-normal">{category.name}</span>
+                    )}
+                  </td>
+                  <td class="text-right tabular-nums">{formatAmount(category.total)}</td>
+                </tr>
+              ))}
+              <tr class:list={[isIncome ? 'bg-cyan-deep text-white' : 'bg-error text-white']}>
+                <td class="font-medium">{isIncome ? 'Total income' : 'Total expenses'}</td>
+                <td class="text-right font-medium tabular-nums">{formatAmount(grand)}</td>
+              </tr>
+            </tbody>
+          </table>
+          {canEdit && (
+            <div class="flex flex-col gap-2 border-t border-hairline p-3 dark:border-slate-800">
+              <label class="sr-only" for={`new-category-${kind}`}>New {isIncome ? 'income' : 'expense'} type</label>
+              <input
+                id={`new-category-${kind}`}
+                class="sheet-input"
+                type="text"
+                name="new_name"
+                placeholder={isIncome ? 'Add an income type…' : 'Add an expense type…'}
+                autocomplete="off"
+              />
+              <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <button
+                  type="submit"
+                  class:list={['h-11 rounded-md bg-primary text-sm text-on-primary dark:bg-slate-100 dark:text-slate-950', !hasCustom && 'sm:col-span-2']}
+                >
+                  Add type
+                </button>
+                {hasCustom && (
+                  <button type="submit" class="h-11 rounded-md border border-hairline text-sm dark:border-slate-700">
+                    Save names
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </form>
+      </aside>
+    </section>
+  </main>
+  <Footer />
+  <script src="../scripts/ledger-actions.ts"></script>
+</Layout>

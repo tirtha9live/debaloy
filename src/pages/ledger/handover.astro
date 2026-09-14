@@ -1,0 +1,70 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import { ADDRESS, ASSOCIATION, HANDOVER_CLOSING_BANK, HANDOVER_CLOSING_CASH, HANDOVER_LINES } from '../../lib/constants';
+import { formatAmount } from '../../lib/format';
+
+const receiptTotal = HANDOVER_LINES.reduce((sum, line) => sum + (line.receiptAmount ?? 0), 0);
+const paymentTotal = HANDOVER_LINES.reduce((sum, line) => sum + (line.paymentAmount ?? 0), 0);
+---
+
+<Layout title={`Handover · ${ASSOCIATION}`} noindex>
+  <Navigation current="handover" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="handover"
+      title="Handover."
+      subtitle="The receipts & payments account received at takeover (FY 2024-26, ended 31 August). Kept here for later reference. It cannot be edited."
+    />
+
+    <p class="sheet-swipe-hint mt-6">Swipe sideways to see receipts and payments together.</p>
+    <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+      <div class="border-b border-hairline px-4 py-5 text-center dark:border-slate-800 sm:px-6">
+        <p class="text-lg font-semibold tracking-tight" translate="no">{ASSOCIATION}</p>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">{ADDRESS}</p>
+        <p class="mt-2 text-sm font-medium text-ink dark:text-slate-100">Receipts & Payments Account — Financial Year 2024-2026 (ended 31st August)</p>
+        <p class="mt-2 font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Original takeover record · reference only</p>
+      </div>
+      <div class="sheet-scroll">
+        <table class="sheet-table w-full">
+          <thead>
+            <tr>
+                <th class="sheet-sticky min-w-40 text-left sm:min-w-56">Receipts</th>
+              <th class="text-right">Amount (Rs.)</th>
+              <th class="text-left">Payments</th>
+              <th class="text-right">Amount (Rs.)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {HANDOVER_LINES.map((line) => (
+              <tr>
+                <td class:list={['sheet-sticky min-w-40 sm:min-w-56', line.receiptSection && 'bg-canvas-soft font-medium dark:bg-slate-800']}>{line.receiptLabel ?? ''}</td>
+                <td class:list={['text-right tabular-nums', line.receiptSection && 'bg-canvas-soft dark:bg-slate-800']}>
+                  {line.receiptAmount === null ? '' : formatAmount(line.receiptAmount)}
+                </td>
+                <td class:list={[line.paymentSection && 'bg-canvas-soft font-medium dark:bg-slate-800']}>{line.paymentLabel ?? ''}</td>
+                <td class:list={['text-right tabular-nums', line.paymentSection && 'bg-canvas-soft dark:bg-slate-800']}>
+                  {line.paymentAmount === null ? '' : formatAmount(line.paymentAmount)}
+                </td>
+              </tr>
+            ))}
+            <tr class="bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950">
+              <td class="sheet-sticky bg-primary font-medium dark:bg-slate-100">Total</td>
+              <td class="text-right font-medium tabular-nums">{formatAmount(receiptTotal)}</td>
+              <td class="font-medium">Total</td>
+              <td class="text-right font-medium tabular-nums">{formatAmount(paymentTotal)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="grid gap-2 border-t border-hairline px-4 py-5 text-sm dark:border-slate-800 sm:grid-cols-2 sm:px-6">
+        <p>Closing bank balance to FY 2026-27: <span class="font-medium tabular-nums">{formatAmount(HANDOVER_CLOSING_BANK)}</span></p>
+        <p>Closing cash balance to FY 2026-27: <span class="font-medium tabular-nums">{formatAmount(HANDOVER_CLOSING_CASH)}</span></p>
+      </div>
+    </section>
+  </main>
+  <Footer />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

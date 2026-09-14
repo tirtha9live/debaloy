@@ -1,0 +1,11 @@
+---
+import { ASSOCIATION } from '../lib/constants';
+const year = new Date().getFullYear();
+---
+
+<footer class="border-t border-hairline bg-canvas px-4 py-8 text-sm text-body dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400 sm:px-6" style="padding-bottom: max(2rem, env(safe-area-inset-bottom));">
+  <div class="mx-auto flex max-w-[1400px] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <p translate="no">{ASSOCIATION}</p>
+    <p>© {year} Debaloy. Private building ledger.</p>
+  </div>
+</footer>

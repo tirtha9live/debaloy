@@ -1,0 +1,69 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import { ASSOCIATION } from '../../lib/constants';
+import { formatAmount } from '../../lib/format';
+import { loadLedger } from '../../lib/ledger';
+
+const snapshot = await loadLedger();
+const canEdit = Astro.locals.canEdit;
+---
+
+<Layout title={`Puja subscription · ${ASSOCIATION}`} noindex>
+  <Navigation current="puja" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="puja"
+      title="Puja subscription."
+      subtitle="Cash only — one payment per flat. The total feeds this year’s account."
+      canEdit={canEdit}
+    />
+
+    <form id="puja-form" method="post" action="/api/ledger/puja" data-ledger-form class="mt-6 sm:mt-8">
+      <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+        <div class="sheet-scroll">
+          <table class="sheet-table w-full max-w-3xl">
+            <thead>
+              <tr>
+                <th class="text-left">Flat</th>
+                <th class="text-left">Owner</th>
+                <th class="text-right">Amount (Rs.)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.puja.map((row) => (
+                <tr>
+                  <td class="font-medium">{row.flatId}</td>
+                  <td class="whitespace-normal">{row.owner}</td>
+                  <td class="text-right">
+                    {canEdit ? (
+                      <input
+                        class="sheet-input text-right"
+                        type="text"
+                        inputmode="decimal"
+                        name={`amount:${row.flatId}`}
+                        value={row.amount ? String(row.amount) : ''}
+                        aria-label={`${row.owner} puja amount`}
+                        autocomplete="off"
+                      />
+                    ) : (
+                      <span class="tabular-nums">{row.amount ? formatAmount(row.amount) : ''}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              <tr class="bg-violet text-white">
+                <td colspan="2" class="font-medium">Grand total (Cash)</td>
+                <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.pujaTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </form>
+  </main>
+  <Footer />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

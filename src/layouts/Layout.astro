@@ -1,0 +1,106 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  canonical?: string;
+  noindex?: boolean;
+}
+
+const siteName = 'Debaloy';
+const {
+  title = 'Debaloy — Building ledger',
+  description = 'Debaloy Flat Owners Welfare Association ledger for FY 2026-27. Access the maintenance, puja, income, and receipts record with a password.',
+  canonical,
+  noindex = false,
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#fafafa" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="description" content={description} />
+    <meta name="robots" content={noindex ? 'noindex, nofollow' : 'index, follow'} />
+    {canonical && <link rel="canonical" href={canonical} />}
+    <meta property="og:site_name" content={siteName} />
+    <meta property="og:locale" content="en_IN" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    {canonical && <meta property="og:url" content={canonical} />}
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <title>{title}</title>
+    <script is:inline>
+      (() => {
+        const storageKey = 'theme-preference';
+        const cookieName = 'debaloy_theme';
+        const cookieMaxAge = 60 * 60 * 24 * 400;
+        const root = document.documentElement;
+        const asTheme = (value) => (value === 'light' || value === 'dark' ? value : null);
+        const readCookie = () => {
+          const match = document.cookie.split('; ').find((part) => part.startsWith(`${cookieName}=`));
+          return asTheme(match ? decodeURIComponent(match.slice(cookieName.length + 1)) : null);
+        };
+        const persistTheme = (theme) => {
+          try {
+            localStorage.setItem(storageKey, theme);
+          } catch {
+            /* Cookie still keeps the choice if storage is blocked. */
+          }
+          const secure = location.protocol === 'https:' ? '; Secure' : '';
+          document.cookie = `${cookieName}=${theme}; Path=/; Max-Age=${cookieMaxAge}; SameSite=Lax${secure}`;
+        };
+        const getPreferredTheme = () => {
+          const fromCookie = readCookie();
+          if (fromCookie) return fromCookie;
+          try {
+            const fromStorage = asTheme(localStorage.getItem(storageKey));
+            if (fromStorage) return fromStorage;
+          } catch {
+            /* Private mode can block storage. */
+          }
+          return 'light';
+        };
+        const applyTheme = (theme) => {
+          root.dataset.theme = theme;
+          root.classList.toggle('dark', theme === 'dark');
+          root.style.colorScheme = theme;
+          const themeColor = document.querySelector('meta[name="theme-color"]');
+          if (themeColor) themeColor.setAttribute('content', theme === 'dark' ? '#020617' : '#fafafa');
+        };
+        const initialTheme = getPreferredTheme();
+        applyTheme(initialTheme);
+        if (readCookie() || initialTheme !== 'light') persistTheme(initialTheme);
+        window.__setTheme = (theme) => {
+          persistTheme(theme);
+          applyTheme(theme);
+          window.dispatchEvent(new CustomEvent('themechange', { detail: theme }));
+        };
+        window.__toggleTheme = () => {
+          const nextTheme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+          window.__setTheme(nextTheme);
+        };
+      })();
+    </script>
+  </head>
+  <body class="bg-canvas-soft text-ink font-sans antialiased dark:bg-slate-950 dark:text-slate-100">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <slot />
+  </body>
+</html>

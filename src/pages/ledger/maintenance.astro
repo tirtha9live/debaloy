@@ -1,0 +1,112 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import { ASSOCIATION, MONTHS } from '../../lib/constants';
+import { formatAmount } from '../../lib/format';
+import { loadLedger } from '../../lib/ledger';
+
+const snapshot = await loadLedger();
+const canEdit = Astro.locals.canEdit;
+---
+
+<Layout title={`Maintenance · ${ASSOCIATION}`} noindex>
+  <Navigation current="maintenance" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="maintenance"
+      title="Maintenance tracker."
+      subtitle="Enter amount and mode (Bank / Cash) for each month. Mode defaults to Cash. This year’s account updates from this sheet."
+      canEdit={canEdit}
+    />
+
+    <form id="maintenance-form" method="post" action="/api/ledger/maintenance" data-ledger-form class="mt-6 sm:mt-8">
+      <p class="sheet-swipe-hint">Swipe sideways to see every month.</p>
+      <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+        <div class="sheet-scroll">
+          <table class="sheet-table">
+            <thead>
+              <tr>
+                <th rowspan="2" class="sheet-sticky sheet-sticky-flat">Flat</th>
+                <th rowspan="2" class="sheet-sticky sheet-sticky-owner">Owner</th>
+                {MONTHS.map((month) => (
+                  <th colspan="2" class="text-center">{month}</th>
+                ))}
+                <th rowspan="2">Total Bank</th>
+                <th rowspan="2">Total Cash</th>
+                <th rowspan="2">Total</th>
+              </tr>
+              <tr>
+                {MONTHS.map(() => (
+                  <>
+                    <th>Amount (Rs.)</th>
+                    <th>Mode</th>
+                  </>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {snapshot.maintenance.map((row) => (
+                <tr>
+                  <td class="sheet-sticky sheet-sticky-flat font-medium">{row.flatId}</td>
+                  <td class="sheet-sticky sheet-sticky-owner">{row.owner}</td>
+                  {MONTHS.map((month) => (
+                    <>
+                      <td>
+                        {canEdit ? (
+                          <input
+                            class="sheet-input"
+                            type="text"
+                            inputmode="decimal"
+                            name={`amount:${row.flatId}:${month}`}
+                            value={row.months[month].amount ? String(row.months[month].amount) : ''}
+                            aria-label={`${row.owner} ${month} amount`}
+                            autocomplete="off"
+                          />
+                        ) : (
+                          <span class="tabular-nums">{row.months[month].amount ? formatAmount(row.months[month].amount) : ''}</span>
+                        )}
+                      </td>
+                      <td>
+                        {canEdit ? (
+                          <select
+                            class="sheet-input min-w-20"
+                            name={`mode:${row.flatId}:${month}`}
+                            aria-label={`${row.owner} ${month} mode`}
+                          >
+                            <option value="Cash" selected={row.months[month].mode === 'Cash'}>Cash</option>
+                            <option value="Bank" selected={row.months[month].mode === 'Bank'}>Bank</option>
+                          </select>
+                        ) : (
+                          row.months[month].mode
+                        )}
+                      </td>
+                    </>
+                  ))}
+                  <td class="text-right font-medium tabular-nums">{formatAmount(row.totalBank)}</td>
+                  <td class="text-right font-medium tabular-nums">{formatAmount(row.totalCash)}</td>
+                  <td class="text-right font-medium tabular-nums">{formatAmount(row.total)}</td>
+                </tr>
+              ))}
+              <tr class="bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950">
+                <td class="sheet-sticky sheet-sticky-flat bg-primary font-medium dark:bg-slate-100" colspan="2">Grand total</td>
+                {MONTHS.map((month) => (
+                  <>
+                    <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.months[month])}</td>
+                    <td></td>
+                  </>
+                ))}
+                <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.bank)}</td>
+                <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.cash)}</td>
+                <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.grand)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </form>
+  </main>
+  <Footer />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

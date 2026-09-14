@@ -1,0 +1,27 @@
+name = "debaloy"
+account_id = "b6bd3fa3e8ee9d0873fd3b19564b2215"
+compatibility_date = "2026-06-02"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = true
+
+# NEW Debaloy-only resources. Do not reuse or modify the live "bytebox"
+# Worker, its KV (bytebox-session / 5eb979cbb1ce4ce39ff556d37e3e7b58),
+# or its D1 (bytebox-feedback / cdf20eac-64b4-41da-b945-b04b4bb409b5).
+
+[[kv_namespaces]]
+binding = "SESSION"
+id = "3abc22bcdabf4082b70d15ab77fe477f"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "debaloy-ledger"
+database_id = "0506c321-9cac-4f3b-90a9-63e1ee490ec4"
+migrations_dir = "migrations"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+
+[observability]
+enabled = true
