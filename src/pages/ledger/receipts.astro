@@ -57,6 +57,7 @@ const canEdit = Astro.locals.canEdit;
                         inputmode="decimal"
                         name={line.paymentLabel.includes('Hand') ? 'cash_in_hand' : 'cash_in_bank'}
                         value={String(line.paymentAmount ?? 0)}
+                        data-change-label={line.paymentLabel.trim()}
                         aria-label={line.paymentLabel.trim()}
                         autocomplete="off"
                       />

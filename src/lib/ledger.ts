@@ -264,7 +264,7 @@ export function buildReceiptsPayments(snapshot: LedgerSnapshot): {
       paymentAmount: expense('Lift Maintenance Contract Renewal'),
     },
     {
-      receiptLabel: 'Maintenance (auto-from Maintenance sheet)',
+      receiptLabel: 'Maintenance',
       receiptAmount: null,
       receiptSection: true,
       paymentLabel: '  Electricity Bill',
@@ -290,13 +290,13 @@ export function buildReceiptsPayments(snapshot: LedgerSnapshot): {
       paymentAmount: expense('Printing & Stationery'),
     },
     {
-      receiptLabel: '  Puja Subscription (Cash — flat owners)',
+      receiptLabel: '  Puja Subscription (flat owners)',
       receiptAmount: snapshot.pujaTotal,
       paymentLabel: '  Donation for Durga Puja & Kali Puja',
       paymentAmount: expense('Donation for Durga Puja & Kali Puja'),
     },
     {
-      receiptLabel: '  Special Donation (Cash — external)',
+      receiptLabel: '  Special Donation (external)',
       receiptAmount: income('Special Donation'),
       paymentLabel: 'Infrastructure & Safety',
       paymentAmount: null,

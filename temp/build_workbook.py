@@ -681,7 +681,7 @@ def build_rp(wb):
                "  Lift Maintenance Contract Renewal", sumif_exp("Lift Maintenance Contract Renewal"),
                a_linked=True, b_formula=True, d_formula=True)
 
-    sec(ws, "A10", "Maintenance (auto-from Maintenance sheet)")
+    sec(ws, "A10", "Maintenance")
     ws["B10"].fill = f(SECTION); ws["B10"].border = bdr()
     sec(ws, "C7", "Operating Expenses")
     ws["D7"].fill = f(SECTION); ws["D7"].border = bdr()
@@ -705,13 +705,13 @@ def build_rp(wb):
     ws["D10"].alignment = Alignment(horizontal="right", vertical="center")
 
     # Row 14: flat owners' puja subscription — cash total from Puja sheet
-    rp_row(14, "  Puja Subscription (Cash — flat owners)",
+    rp_row(14, "  Puja Subscription (flat owners)",
                f"'Puja Subscription'!C{puja_total_row}",
                "  Printing & Stationery", sumif_exp("Printing & Stationery"),
                a_linked=True, b_formula=True, d_formula=True)
 
     # Row 15: external special donation — cash from Income sheet
-    rp_row(15, "  Special Donation (Cash — external)",
+    rp_row(15, "  Special Donation (external)",
                sumif_inc("Special Donation"),
                "  Donation - Durga Puja & Kali Puja", sumif_exp("Donation for Durga Puja & Kali Puja"),
                a_linked=True, b_formula=True, d_formula=True)

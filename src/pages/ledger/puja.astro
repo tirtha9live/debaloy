@@ -45,6 +45,7 @@ const canEdit = Astro.locals.canEdit;
                         inputmode="decimal"
                         name={`amount:${row.flatId}`}
                         value={row.amount ? String(row.amount) : ''}
+                        data-change-label={row.owner}
                         aria-label={`${row.owner} puja amount`}
                         autocomplete="off"
                       />

@@ -52,3 +52,18 @@ export function formatUpdatedOn(value: string | null | undefined): string | null
   }).format(date);
   return `Last updated on ${formatted}`;
 }
+
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: DISPLAY_TIME_ZONE,
+  }).format(date);
+}

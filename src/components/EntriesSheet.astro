@@ -63,7 +63,7 @@ const subtitle = isIncome
                 <tr>
                   {canEdit ? (
                     <td colspan={6} class="p-0">
-                      <form method="post" action="/api/ledger/entries" class="entry-form">
+                      <form method="post" action="/api/ledger/entries" class="entry-form" data-ledger-form>
                         <input type="hidden" name="intent" value="update" />
                         <input type="hidden" name="kind" value={kind} />
                         <input type="hidden" name="id" value={entry.id} />
@@ -97,7 +97,7 @@ const subtitle = isIncome
                         </label>
                         <div class="entry-actions">
                           <button type="submit" class="entry-btn border border-hairline dark:border-slate-700">Save</button>
-                          <button type="submit" name="intent" value="delete" class="entry-btn border border-error/30 text-error" onclick="return confirm('Delete this row?')">Delete</button>
+                          <button type="submit" name="intent" value="delete" class="entry-btn border border-error/30 text-error">Delete</button>
                         </div>
                       </form>
                     </td>
@@ -115,7 +115,7 @@ const subtitle = isIncome
               {canEdit && (
                 <tr>
                   <td colspan={6} class="p-0">
-                    <form method="post" action="/api/ledger/entries" class="entry-form border-t border-hairline dark:border-slate-800">
+                    <form method="post" action="/api/ledger/entries" class="entry-form border-t border-hairline dark:border-slate-800" data-ledger-form>
                       <input type="hidden" name="intent" value="create" />
                       <input type="hidden" name="kind" value={kind} />
                       <label class="entry-field">
@@ -159,7 +159,7 @@ const subtitle = isIncome
       </div>
 
       <aside class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
-        <form method="post" action="/api/ledger/categories">
+        <form method="post" action="/api/ledger/categories" data-ledger-form>
           <input type="hidden" name="kind" value={kind} />
           <table class="sheet-table w-full">
             <thead>
@@ -180,7 +180,8 @@ const subtitle = isIncome
                         value={category.name}
                         placeholder="Type name"
                         autocomplete="off"
-                        aria-label="Custom category name"
+                        data-change-label={category.name}
+                        aria-label={`${category.name} type name`}
                       />
                     ) : (
                       <span class="whitespace-normal">{category.name}</span>

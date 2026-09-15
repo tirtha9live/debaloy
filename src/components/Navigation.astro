@@ -86,6 +86,20 @@ const lastUpdatedLabel = session ? formatUpdatedOn(await getLastUpdatedAt()) : n
             </a>
           );
         })}
+        {session?.role === 'admin' && !viewAsResident && (
+          <a
+            href="/ledger/activity"
+            class:list={[
+              'flex min-h-11 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors duration-200',
+              current === 'activity'
+                ? 'bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950'
+                : 'text-body hover:bg-canvas-soft hover:text-ink dark:text-slate-300 dark:hover:bg-slate-900 dark:hover:text-white',
+            ]}
+            aria-current={current === 'activity' ? 'page' : undefined}
+          >
+            Activity
+          </a>
+        )}
       </div>
     </nav>
   )}

@@ -12,9 +12,17 @@ if (Astro.locals.session) {
 const lockRemaining = await getLoginLockRemaining(Astro.request);
 const locked = lockRemaining > 0;
 const invalid = Astro.url.searchParams.get('error') === '1' || locked;
+const attemptsLeft = Number(Astro.url.searchParams.get('left'));
 const lockLabel = locked
   ? `Try again in ${Math.floor(lockRemaining / 60)}:${String(lockRemaining % 60).padStart(2, '0')}`
   : 'Enter ledger';
+const errorMessage = locked
+  ? 'That password is not recognised. Try again after some time.'
+  : attemptsLeft === 1
+    ? 'That password is not recognised. You have 1 attempt left.'
+    : attemptsLeft === 2
+      ? 'That password is not recognised. You have 2 attempts left.'
+      : 'That password is not recognised.';
 ---
 
 <Layout title="Debaloy — Enter access password">
@@ -54,7 +62,7 @@ const lockLabel = locked
         />
         {invalid && (
           <p class="mt-3 text-sm text-error" role="alert">
-            That password is not recognised. Try again after some time.
+            {errorMessage}
           </p>
         )}
         <button

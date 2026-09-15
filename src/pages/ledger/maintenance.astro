@@ -61,6 +61,7 @@ const canEdit = Astro.locals.canEdit;
                             inputmode="decimal"
                             name={`amount:${row.flatId}:${month}`}
                             value={row.months[month].amount ? String(row.months[month].amount) : ''}
+                            data-change-label={`${row.owner} · ${month}`}
                             aria-label={`${row.owner} ${month} amount`}
                             autocomplete="off"
                           />
@@ -73,6 +74,7 @@ const canEdit = Astro.locals.canEdit;
                           <select
                             class="sheet-input min-w-20"
                             name={`mode:${row.flatId}:${month}`}
+                            data-change-label={`${row.owner} · ${month} · mode`}
                             aria-label={`${row.owner} ${month} mode`}
                           >
                             <option value="Cash" selected={row.months[month].mode === 'Cash'}>Cash</option>

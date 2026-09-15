@@ -102,5 +102,56 @@ const {
   <body class="bg-canvas-soft text-ink font-sans antialiased dark:bg-slate-950 dark:text-slate-100">
     <a class="skip-link" href="#main">Skip to content</a>
     <slot />
+    <div id="save-confirm" class="fixed inset-0 z-50 hidden" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="save-confirm-title">
+      <button type="button" class="absolute inset-0 bg-ink/50" data-save-confirm-dismiss aria-label="Close confirmation"></button>
+      <div
+        class="pointer-events-none relative flex h-full items-end justify-center p-4 sm:items-center"
+        style="padding-bottom: max(1rem, env(safe-area-inset-bottom))"
+      >
+        <div class="pointer-events-auto flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-hairline bg-canvas shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <div class="border-b border-hairline px-5 py-4 dark:border-slate-800">
+            <h2 id="save-confirm-title" class="text-lg font-semibold tracking-tight text-ink dark:text-slate-100">Confirm these updates?</h2>
+            <p id="save-confirm-copy" class="mt-1 text-sm text-body dark:text-slate-300">Nothing is saved until you confirm.</p>
+          </div>
+          <div id="save-confirm-list" class="min-h-0 flex-1 overflow-y-auto px-5 py-2"></div>
+          <div class="grid grid-cols-2 gap-2 border-t border-hairline p-4 dark:border-slate-800">
+            <button type="button" id="save-confirm-cancel" class="h-11 rounded-md border border-hairline text-sm font-medium dark:border-slate-700">
+              Review again
+            </button>
+            <button type="button" id="save-confirm-ok" class="h-11 rounded-md bg-primary text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950">
+              Confirm save
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="json-import-confirm" class="fixed inset-0 z-50 hidden" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="json-import-title">
+      <button type="button" class="absolute inset-0 bg-ink/50" data-json-import-dismiss aria-label="Close restore options"></button>
+      <div
+        class="pointer-events-none relative flex h-full items-end justify-center p-4 sm:items-center"
+        style="padding-bottom: max(1rem, env(safe-area-inset-bottom))"
+      >
+        <div class="pointer-events-auto flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-xl border border-hairline bg-canvas shadow-lg dark:border-slate-700 dark:bg-slate-900">
+          <div class="border-b border-hairline px-5 py-4 dark:border-slate-800">
+            <h2 id="json-import-title" class="text-lg font-semibold tracking-tight text-ink dark:text-slate-100">Restore from JSON?</h2>
+            <p id="json-import-copy" class="mt-1 text-sm text-body dark:text-slate-300">
+              Merge keeps extra rows that are not in the file. Overwrite clears the live database, then imports this file.
+            </p>
+          </div>
+          <p id="json-import-file-label" class="px-5 py-3 font-mono text-xs text-mute dark:text-slate-400"></p>
+          <div class="grid grid-cols-1 gap-2 border-t border-hairline p-4 dark:border-slate-800 sm:grid-cols-3">
+            <button type="button" id="json-import-cancel" class="h-11 rounded-md border border-hairline text-sm font-medium dark:border-slate-700">
+              Cancel
+            </button>
+            <button type="button" id="json-import-merge" class="h-11 rounded-md border border-hairline text-sm font-medium dark:border-slate-700">
+              Merge
+            </button>
+            <button type="button" id="json-import-overwrite" class="h-11 rounded-md bg-primary text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950">
+              Overwrite
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

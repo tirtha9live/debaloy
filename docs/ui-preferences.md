@@ -14,7 +14,7 @@ UI decisions for **Debaloy** that future changes should preserve unless explicit
 - Follow [`DESIGN.md`](../DESIGN.md): Vercel-inspired ink on canvas, hairline borders, stacked shadows, sentence-case display headings with negative tracking, Inter for UI, mono for eyebrows and table headers.
 - Mesh gradient only at login/hero scale.
 - Login submit (click or Enter) disables the button and shows “Logging in…” with a moving ellipsis until the page navigates.
-- After a wrong password, disable login for 3 minutes with a `Try again in m:ss` countdown. The Worker enforces the same lock.
+- Three wrong passwords lock login for 3 minutes (`Try again in m:ss`). After two failures, the alert is **You have 1 attempt left.** The Worker enforces the same lock.
 - Marketing CTAs use pill radius; in-app controls use 6–8px radius.
 - Money columns use `tabular-nums` and `Intl.NumberFormat('en-IN')`.
 
@@ -22,14 +22,16 @@ UI decisions for **Debaloy** that future changes should preserve unless explicit
 
 - Spreadsheet chrome: sticky Flat/Owner columns, cream/blue editable cells in light mode, slate/cyan in dark mode.
 - Admin edits in place (amount + Bank/Cash). Residents see computed values only.
-- A single **Download** control opens three options: Excel formatted, Excel raw, and Image. Image captures `#sheet-capture`.
-- The Download control shows a spinner and “Downloading…” while a file is being prepared; `aria-live` reports progress. Excel formatted and Excel raw still work as `/api/export?kind=` links if JS is off.
+- A single **Download** control opens Excel formatted, Excel raw, and Image. Image captures `#sheet-capture`. Treasurer also sees **JSON export** and **JSON import**. Import asks Merge (keep extra rows) or Overwrite (clear, then restore). Residents never see those options.
+- The Download control shows a spinner and “Downloading…” while a file is being prepared; `aria-live` reports progress. Excel formatted, Excel raw, and treasurer JSON backup still work as `/api/export?kind=` links if JS is off.
 - Handover is labeled as the original takeover record (reference only). This year’s account is the live statement that updates with new data and downloads in the same form.
 - President / Secretary & Treasurer signature lines are **not** shown on the web This Year view. They are included in Excel download and briefly revealed during PNG capture (`[data-export-only]`), along with closing balances carried to the next FY.
 - After the treasurer saves, show **Last updated on {date}** (date only, Asia/Kolkata) under the Debaloy mark on phones, and under the welcome line on desktop. Do not show a time. Omit the line until the first save.
 - Empty logs show “No rows yet.” rather than a broken table.
 - Income and expense summaries list only named types. Spare blank slots are not shown. The treasurer adds a type from the category summary; it then appears there, in the row dropdown, and on This Year.
 - Destructive row delete asks for confirmation.
+- Treasurer save is deliberate: Save sheet / Save / Add row opens a checklist of every changed value (for example `0.00 → 5,000.00`) and writes nothing until Confirm save.
+- Treasurer **Activity** (nav + home card) shows sessions and a login audit. Residents never see it.
 
 ## Responsive
 
@@ -44,8 +46,8 @@ UI decisions for **Debaloy** that future changes should preserve unless explicit
 
 ## Analytics / ads
 
-No analytics, ad networks, or measurement IDs.
+No third-party analytics, ad networks, or measurement IDs. Treasurer Activity is first-party session and login audit only.
 
 ## Instruction for future edits
 
-Do not switch the default theme to dark, invert the toggle icons, store theme on the shared login, turn the ledger into an SPA, or add tracking unless explicitly requested.
+Do not switch the default theme to dark, invert the toggle icons, store theme on the shared login, turn the ledger into an SPA, or add third-party tracking unless explicitly requested.

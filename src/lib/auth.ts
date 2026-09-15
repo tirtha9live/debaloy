@@ -1,6 +1,12 @@
 import { env } from 'cloudflare:workers';
 import type { APIContext, AstroCookies } from 'astro';
-import { LOGIN_LOCK_SECONDS, SESSION_COOKIE, SESSION_TTL_SECONDS } from './constants';
+import {
+  LOGIN_ATTEMPT_WINDOW_SECONDS,
+  LOGIN_FAIL_LIMIT,
+  LOGIN_LOCK_SECONDS,
+  SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
+} from './constants';
 
 export type SessionRole = 'resident' | 'admin';
 
@@ -70,6 +76,16 @@ export async function destroySession(cookies: AstroCookies) {
   cookies.delete(SESSION_COOKIE, { path: '/' });
 }
 
+export function isSameOriginRequest(request: Request) {
+  const origin = request.headers.get('Origin');
+  if (!origin) return false;
+  try {
+    return new URL(origin).origin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function isSecureRequest(url: URL) {
   return url.protocol === 'https:';
 }
@@ -107,7 +123,7 @@ export function requireRole(context: APIContext, role?: SessionRole) {
   return null;
 }
 
-function clientIp(request: Request) {
+export function clientIp(request: Request) {
   return (
     request.headers.get('CF-Connecting-IP') ||
     request.headers.get('True-Client-IP') ||
@@ -123,21 +139,53 @@ async function loginLockKey(request: Request) {
   return `loginlock:${hex}`;
 }
 
-export async function getLoginLockRemaining(request: Request): Promise<number> {
+type LoginGuard = {
+  fails: number;
+  until?: number;
+};
+
+async function readLoginGuard(request: Request): Promise<LoginGuard> {
   const raw = await getBindings().SESSION.get(await loginLockKey(request));
-  if (!raw) return 0;
+  if (!raw) return { fails: 0 };
   try {
-    const until = Number((JSON.parse(raw) as { until?: number }).until);
-    if (!Number.isFinite(until)) return 0;
-    return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+    const parsed = JSON.parse(raw) as LoginGuard;
+    const fails = Number(parsed.fails) || 0;
+    const until = Number(parsed.until);
+    return {
+      fails,
+      until: Number.isFinite(until) ? until : undefined,
+    };
   } catch {
-    return 0;
+    return { fails: 0 };
   }
 }
 
-export async function lockLogin(request: Request) {
-  const until = Date.now() + LOGIN_LOCK_SECONDS * 1000;
-  await getBindings().SESSION.put(await loginLockKey(request), JSON.stringify({ until }), {
-    expirationTtl: LOGIN_LOCK_SECONDS,
-  });
+export async function getLoginLockRemaining(request: Request): Promise<number> {
+  const guard = await readLoginGuard(request);
+  if (!guard.until) return 0;
+  return Math.max(0, Math.ceil((guard.until - Date.now()) / 1000));
+}
+
+export async function clearLoginFailures(request: Request) {
+  await getBindings().SESSION.delete(await loginLockKey(request));
+}
+
+export async function recordFailedLogin(request: Request): Promise<{
+  locked: boolean;
+  remaining: number;
+}> {
+  const existing = await readLoginGuard(request);
+  if (existing.until && existing.until > Date.now()) {
+    return { locked: true, remaining: 0 };
+  }
+
+  const fails = Math.min(LOGIN_FAIL_LIMIT, (existing.fails || 0) + 1);
+  const locked = fails >= LOGIN_FAIL_LIMIT;
+  const until = locked ? Date.now() + LOGIN_LOCK_SECONDS * 1000 : undefined;
+  await getBindings().SESSION.put(
+    await loginLockKey(request),
+    JSON.stringify({ fails, until }),
+    { expirationTtl: locked ? LOGIN_LOCK_SECONDS : LOGIN_ATTEMPT_WINDOW_SECONDS },
+  );
+  return { locked, remaining: Math.max(0, LOGIN_FAIL_LIMIT - fails) };
 }

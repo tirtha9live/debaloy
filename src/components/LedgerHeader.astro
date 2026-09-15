@@ -92,6 +92,27 @@ const ghostClass =
         >
           Image
         </button>
+        {Astro.locals.canEdit && (
+          <>
+            <a
+              href="/api/export?kind=json"
+              role="menuitem"
+              data-backup="json"
+              class="flex min-h-11 items-center px-3 text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              JSON export
+            </a>
+            <button
+              type="button"
+              role="menuitem"
+              id="json-import"
+              class="flex min-h-11 w-full items-center px-3 text-left text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              JSON import
+            </button>
+            <input id="json-import-file" type="file" accept="application/json,.json" class="hidden" />
+          </>
+        )}
       </div>
     </div>
     {canEdit && (
