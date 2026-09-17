@@ -57,7 +57,10 @@ export async function readSession(cookies: AstroCookies): Promise<Session | null
   const id = cookies.get(SESSION_COOKIE)?.value;
   if (!id) return null;
   const raw = await getBindings().SESSION.get(`session:${id}`);
-  if (!raw) return null;
+  if (!raw) {
+    cookies.delete(SESSION_COOKIE, { path: '/' });
+    return null;
+  }
   try {
     const parsed = JSON.parse(raw) as Session;
     if (parsed.id !== id) return null;
@@ -94,9 +97,20 @@ export function viewQuery(viewAsResident: boolean): string {
   return viewAsResident ? '?view=resident' : '';
 }
 
-export function withView(href: string, viewAsResident: boolean): string {
-  if (!viewAsResident) return href;
-  return href.includes('?') ? `${href}&view=resident` : `${href}?view=resident`;
+export function withView(href: string, viewAsResident: boolean, yearId?: number | null): string {
+  const [path, existing] = href.split('?');
+  const params = new URLSearchParams(existing ?? '');
+  if (viewAsResident) params.set('view', 'resident');
+  else params.delete('view');
+  if (yearId) params.set('year', String(yearId));
+  else params.delete('year');
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+export function withLedger(href: string, locals: { viewAsResident: boolean; ledgerYear?: { id: number; endDate: string | null } }) {
+  const yearId = locals.ledgerYear?.endDate ? locals.ledgerYear.id : null;
+  return withView(href, locals.viewAsResident, yearId);
 }
 
 export function sameOriginPath(request: Request, fallback: string): string {

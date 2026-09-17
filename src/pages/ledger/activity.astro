@@ -1,121 +1,529 @@
 ---
+
 import Layout from '../../layouts/Layout.astro';
+
 import Navigation from '../../components/Navigation.astro';
+
 import Footer from '../../components/Footer.astro';
+
 import LedgerHeader from '../../components/LedgerHeader.astro';
+
 import { ASSOCIATION } from '../../lib/constants';
+
 import { formatDateTime } from '../../lib/format';
+
 import {
+
   displayRole,
+
+  displaySheet,
+
+  formatActiveDuration,
+
+  listLedgerAudit,
+
   listLoginEvents,
-  listVisitors,
+
+  listPopularPages,
+
+  listRecentPageViews,
+
+  listSessionEngagement,
+
   loginOutcomeLabel,
+
   shortId,
+
 } from '../../lib/activity';
 
+
+
 if (!Astro.locals.canEdit) {
+
   return Astro.redirect(Astro.locals.viewAsResident ? '/ledger?view=resident' : '/ledger');
+
 }
 
-const visitors = await listVisitors();
+
+
+const sessions = await listSessionEngagement();
+
+const popular = await listPopularPages();
+
+const pageTrail = await listRecentPageViews();
+
+const audits = await listLedgerAudit();
+
 const events = await listLoginEvents();
+
+
+
+function pathLabel(path: string) {
+
+  const base = path.split('?')[0];
+
+  const map: Record<string, string> = {
+
+    '/ledger': 'Home',
+
+    '/ledger/maintenance': 'Maintenance',
+
+    '/ledger/puja': 'Puja',
+
+    '/ledger/income': 'Other collections',
+
+    '/ledger/expenses': 'Expenses',
+
+    '/ledger/withdrawals': 'Withdrawals',
+
+    '/ledger/receipts': 'This year’s account',
+
+    '/ledger/years': 'Years',
+
+    '/ledger/handover': 'Archive',
+
+    '/ledger/activity': 'Activity',
+
+  };
+
+  return map[base] ?? (base.replace('/ledger/', '').replace(/-/g, ' ') || 'Page');
+
+}
+
 ---
 
+
+
 <Layout title={`Activity · ${ASSOCIATION}`} noindex>
+
   <Navigation current="activity" />
+
   <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+
     <LedgerHeader
+
       sheet="activity"
+
       title="Activity."
-      subtitle="Resident access is a shared password, so this page lists sessions by IP and device. Login events keep an audit trail for treasurer access, and can take more roles later."
+
+      subtitle="Engagement by session (pages and time on site), plus a ledger change audit when someone with edit access confirms a save. Residents share one password; sessions are still separated by browser login."
+
     />
 
-    <section class="mt-8">
-      <h2 class="text-lg font-semibold tracking-tight">Sessions</h2>
-      <p class="mt-1 text-sm text-body dark:text-slate-300">{visitors.length} recent {visitors.length === 1 ? 'session' : 'sessions'}.</p>
-      <p class="sheet-swipe-hint mt-3">Swipe sideways to see IP, device, and session id.</p>
-      <div id="sheet-capture" class="card-elevate mt-2 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
-        <div class="sheet-scroll">
-          <table class="sheet-table w-full">
-            <thead>
-              <tr>
-                <th class="text-left">Last seen</th>
-                <th class="text-left">First seen</th>
-                <th class="text-left">Role</th>
-                <th class="text-left">IP</th>
-                <th class="text-left">Device</th>
-                <th class="text-left">UA</th>
-                <th class="text-right">Views</th>
-                <th class="text-right">Downloads</th>
-                <th class="text-left">Session</th>
-                <th class="text-left">Fingerprint</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visitors.length === 0 && (
-                <tr>
-                  <td colspan="10" class="whitespace-normal text-body dark:text-slate-300">No sessions yet.</td>
-                </tr>
-              )}
-              {visitors.map((row) => (
-                <tr>
-                  <td class="whitespace-nowrap">{formatDateTime(row.lastSeen)}</td>
-                  <td class="whitespace-nowrap">{formatDateTime(row.firstSeen)}</td>
-                  <td>{displayRole(row.role)}</td>
-                  <td class="font-mono text-xs">{row.ip || '—'}</td>
-                  <td>{row.device || '—'}</td>
-                  <td class="max-w-56 truncate" title={row.userAgent}>{row.userAgent || '—'}</td>
-                  <td class="text-right tabular-nums">{row.views}</td>
-                  <td class="text-right tabular-nums">{row.downloads}</td>
-                  <td class="font-mono text-xs" title={row.sessionId}>{shortId(row.sessionId)}</td>
-                  <td class="font-mono text-xs">{row.fingerprint || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
 
-    <section class="mt-10">
-      <h2 class="text-lg font-semibold tracking-tight">Login audit</h2>
-      <p class="mt-1 text-sm text-body dark:text-slate-300">Signed in, signed out, wrong password, and lockouts. Passwords are never stored.</p>
-      <p class="sheet-swipe-hint mt-3">Swipe sideways to see IP and session.</p>
-      <div class="card-elevate mt-2 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
-        <div class="sheet-scroll">
-          <table class="sheet-table w-full">
-            <thead>
-              <tr>
-                <th class="text-left">When</th>
-                <th class="text-left">Event</th>
-                <th class="text-left">Role</th>
-                <th class="text-left">IP</th>
-                <th class="text-left">Device</th>
-                <th class="text-left">Session</th>
-              </tr>
-            </thead>
-            <tbody>
-              {events.length === 0 && (
+
+    <div id="sheet-capture" class="mt-8 space-y-10">
+
+      <section>
+
+        <h2 class="text-lg font-semibold tracking-tight">Popular pages</h2>
+
+        <p class="mt-1 text-sm text-body dark:text-slate-300">Total active time and visits across recent sessions.</p>
+
+        <div class="card-elevate mt-3 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+
+          <div class="sheet-scroll sheet-freeze">
+
+            <table class="sheet-table w-full">
+
+              <thead>
+
                 <tr>
-                  <td colspan="6" class="whitespace-normal text-body dark:text-slate-300">No login events yet.</td>
+
+                  <th class="text-left">Page</th>
+
+                  <th class="text-right">Visits</th>
+
+                  <th class="text-right">Active time</th>
+
                 </tr>
-              )}
-              {events.map((row) => (
-                <tr>
-                  <td class="whitespace-nowrap">{formatDateTime(row.at)}</td>
-                  <td>{loginOutcomeLabel(row.outcome)}</td>
-                  <td>{displayRole(row.role)}</td>
-                  <td class="font-mono text-xs">{row.ip || '—'}</td>
-                  <td>{row.device || '—'}</td>
-                  <td class="font-mono text-xs" title={row.sessionId ?? ''}>{shortId(row.sessionId)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+              </thead>
+
+              <tbody>
+
+                {popular.length === 0 && (
+
+                  <tr>
+
+                    <td colspan="3" class="whitespace-normal text-body dark:text-slate-300">No page views yet.</td>
+
+                  </tr>
+
+                )}
+
+                {popular.map((row) => (
+
+                  <tr>
+
+                    <td class="whitespace-normal">
+
+                      <span class="font-medium">{pathLabel(row.path)}</span>
+
+                      <span class="mt-0.5 block font-mono text-xs text-mute dark:text-slate-400">{row.path}</span>
+
+                    </td>
+
+                    <td class="text-right tabular-nums">{row.visits}</td>
+
+                    <td class="text-right tabular-nums">{formatActiveDuration(row.activeSec)}</td>
+
+                  </tr>
+
+                ))}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
         </div>
-      </div>
-    </section>
+
+      </section>
+
+
+
+      <section>
+
+        <h2 class="text-lg font-semibold tracking-tight">Sessions</h2>
+
+        <p class="mt-1 text-sm text-body dark:text-slate-300">
+
+          {sessions.length} recent {sessions.length === 1 ? 'session' : 'sessions'}. Active time includes navigation and time on a page before switching or leaving.
+
+        </p>
+
+        <p class="sheet-swipe-hint mt-3">Swipe sideways for IP, device, and session id.</p>
+
+        <div class="card-elevate mt-2 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+
+          <div class="sheet-scroll sheet-freeze">
+
+            <table class="sheet-table w-full">
+
+              <thead>
+
+                <tr>
+
+                  <th class="text-left">Last seen</th>
+
+                  <th class="text-left">First seen</th>
+
+                  <th class="text-left">Role</th>
+
+                  <th class="text-right">Pages</th>
+
+                  <th class="text-right">Active time</th>
+
+                  <th class="text-right">Downloads</th>
+
+                  <th class="text-left">IP</th>
+
+                  <th class="text-left">Device</th>
+
+                  <th class="text-left">Session</th>
+
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                {sessions.length === 0 && (
+
+                  <tr>
+
+                    <td colspan="9" class="whitespace-normal text-body dark:text-slate-300">No sessions yet.</td>
+
+                  </tr>
+
+                )}
+
+                {sessions.map((row) => (
+
+                  <tr>
+
+                    <td class="whitespace-nowrap">{formatDateTime(row.lastSeen)}</td>
+
+                    <td class="whitespace-nowrap">{formatDateTime(row.firstSeen)}</td>
+
+                    <td>{displayRole(row.role)}</td>
+
+                    <td class="text-right tabular-nums">{row.pageViews}</td>
+
+                    <td class="text-right tabular-nums">{formatActiveDuration(row.activeSec)}</td>
+
+                    <td class="text-right tabular-nums">{row.downloads}</td>
+
+                    <td class="font-mono text-xs">{row.ip || '—'}</td>
+
+                    <td>{row.device || '—'}</td>
+
+                    <td class="font-mono text-xs" title={row.sessionId}>{shortId(row.sessionId)}</td>
+
+                  </tr>
+
+                ))}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+
+      <section>
+
+        <h2 class="text-lg font-semibold tracking-tight">Page trail</h2>
+
+        <p class="mt-1 text-sm text-body dark:text-slate-300">Recent page opens across all sessions (newest first).</p>
+
+        <div class="card-elevate mt-3 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+
+          <div class="sheet-scroll sheet-freeze">
+
+            <table class="sheet-table w-full">
+
+              <thead>
+
+                <tr>
+
+                  <th class="text-left">When</th>
+
+                  <th class="text-left">Page</th>
+
+                  <th class="text-left">Role</th>
+
+                  <th class="text-right">Time on page</th>
+
+                  <th class="text-left">Session</th>
+
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                {pageTrail.length === 0 && (
+
+                  <tr>
+
+                    <td colspan="5" class="whitespace-normal text-body dark:text-slate-300">No page views yet.</td>
+
+                  </tr>
+
+                )}
+
+                {pageTrail.map((row) => (
+
+                  <tr>
+
+                    <td class="whitespace-nowrap">{formatDateTime(row.startedAt)}</td>
+
+                    <td class="max-w-xs whitespace-normal">
+
+                      <span class="font-medium">{pathLabel(row.path)}</span>
+
+                      <span class="mt-0.5 block truncate font-mono text-xs text-mute dark:text-slate-400" title={row.path}>{row.path}</span>
+
+                    </td>
+
+                    <td>{displayRole(row.role)}</td>
+
+                    <td class="text-right tabular-nums">{formatActiveDuration(row.durationSec)}</td>
+
+                    <td class="font-mono text-xs" title={row.sessionId}>{shortId(row.sessionId)}</td>
+
+                  </tr>
+
+                ))}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+
+      <section>
+
+        <h2 class="text-lg font-semibold tracking-tight">Ledger changes</h2>
+
+        <p class="mt-1 text-sm text-body dark:text-slate-300">
+
+          Values recorded when edit access confirms a save (same checklist as the confirm dialog). Passwords are never stored.
+
+        </p>
+
+        <div class="card-elevate mt-3 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+
+          <div class="sheet-scroll sheet-freeze">
+
+            <table class="sheet-table w-full">
+
+              <thead>
+
+                <tr>
+
+                  <th class="text-left">When</th>
+
+                  <th class="text-left">Sheet</th>
+
+                  <th class="text-left">Field</th>
+
+                  <th class="text-left">From</th>
+
+                  <th class="text-left">To</th>
+
+                  <th class="text-left">Role</th>
+
+                  <th class="text-left">Session</th>
+
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                {audits.length === 0 && (
+
+                  <tr>
+
+                    <td colspan="7" class="whitespace-normal text-body dark:text-slate-300">No saved changes logged yet.</td>
+
+                  </tr>
+
+                )}
+
+                {audits.map((row) => (
+
+                  <tr>
+
+                    <td class="whitespace-nowrap">{formatDateTime(row.at)}</td>
+
+                    <td>{displaySheet(row.sheet)}</td>
+
+                    <td class="max-w-40 whitespace-normal">{row.fieldLabel}</td>
+
+                    <td class="max-w-32 truncate font-mono text-xs" title={row.oldValue}>{row.oldValue || '—'}</td>
+
+                    <td class="max-w-32 truncate font-mono text-xs" title={row.newValue}>{row.newValue || '—'}</td>
+
+                    <td>{displayRole(row.role)}</td>
+
+                    <td class="font-mono text-xs" title={row.sessionId}>{shortId(row.sessionId)}</td>
+
+                  </tr>
+
+                ))}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+      </section>
+
+
+
+      <section>
+
+        <h2 class="text-lg font-semibold tracking-tight">Login audit</h2>
+
+        <p class="mt-1 text-sm text-body dark:text-slate-300">Signed in, signed out, wrong password, and lockouts.</p>
+
+        <p class="sheet-swipe-hint mt-3">Swipe sideways to see IP and session.</p>
+
+        <div class="card-elevate mt-2 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+
+          <div class="sheet-scroll sheet-freeze">
+
+            <table class="sheet-table w-full">
+
+              <thead>
+
+                <tr>
+
+                  <th class="text-left">When</th>
+
+                  <th class="text-left">Event</th>
+
+                  <th class="text-left">Role</th>
+
+                  <th class="text-left">IP</th>
+
+                  <th class="text-left">Device</th>
+
+                  <th class="text-left">Session</th>
+
+                </tr>
+
+              </thead>
+
+              <tbody>
+
+                {events.length === 0 && (
+
+                  <tr>
+
+                    <td colspan="6" class="whitespace-normal text-body dark:text-slate-300">No login events yet.</td>
+
+                  </tr>
+
+                )}
+
+                {events.map((row) => (
+
+                  <tr>
+
+                    <td class="whitespace-nowrap">{formatDateTime(row.at)}</td>
+
+                    <td>{loginOutcomeLabel(row.outcome)}</td>
+
+                    <td>{displayRole(row.role)}</td>
+
+                    <td class="font-mono text-xs">{row.ip || '—'}</td>
+
+                    <td>{row.device || '—'}</td>
+
+                    <td class="font-mono text-xs" title={row.sessionId ?? ''}>{shortId(row.sessionId)}</td>
+
+                  </tr>
+
+                ))}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
+
   </main>
+
   <Footer />
+
   <script src="../../scripts/ledger-actions.ts"></script>
+
 </Layout>
+
+

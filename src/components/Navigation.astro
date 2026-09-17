@@ -1,7 +1,7 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
 import { ASSOCIATION, SHEETS } from '../lib/constants';
-import { withView } from '../lib/auth';
+import { withLedger, withView } from '../lib/auth';
 import { formatUpdatedOn } from '../lib/format';
 import { getLastUpdatedAt } from '../lib/ledger';
 
@@ -18,7 +18,7 @@ const lastUpdatedLabel = session ? formatUpdatedOn(await getLastUpdatedAt()) : n
 
 <header class="sticky top-0 z-40 border-b border-hairline bg-canvas/90 pt-[env(safe-area-inset-top)] backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
   <div class="mx-auto flex max-w-[1400px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
-    <a href={session ? withView('/ledger', viewAsResident) : '/'} class="flex min-w-0 items-center gap-2.5">
+    <a href={session ? withLedger('/ledger', Astro.locals) : '/'} class="flex min-w-0 items-center gap-2.5">
       <svg class="h-8 w-8 shrink-0" viewBox="0 0 32 32" fill="none" aria-hidden="true">
         <rect width="32" height="32" rx="8" class="fill-ink dark:fill-slate-100"></rect>
         <path d="M12 8h6.4c4.5 0 8 3.4 8 8s-3.5 8-8 8H12V8Zm3.1 2.8v10.4h3.3c2.7 0 4.8-2.2 4.8-5.2s-2.1-5.2-4.8-5.2h-3.3Z" class="fill-canvas dark:fill-slate-950"></path>
@@ -28,7 +28,7 @@ const lastUpdatedLabel = session ? formatUpdatedOn(await getLastUpdatedAt()) : n
           Debaloy
         </span>
         {lastUpdatedLabel && (
-          <span class="mt-0.5 block truncate text-xs text-body lg:hidden dark:text-slate-300">{lastUpdatedLabel}</span>
+          <span class="mt-0.5 block text-xs leading-4 text-body lg:hidden dark:text-slate-300">{lastUpdatedLabel}</span>
         )}
       </span>
     </a>
@@ -73,7 +73,7 @@ const lastUpdatedLabel = session ? formatUpdatedOn(await getLastUpdatedAt()) : n
           const active = current === sheet.slug;
           return (
             <a
-              href={withView(sheet.href, viewAsResident)}
+              href={sheet.slug === 'handover' || sheet.slug === 'years' ? withView(sheet.href, viewAsResident) : withLedger(sheet.href, Astro.locals)}
               class:list={[
                 'flex min-h-11 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors duration-200',
                 active

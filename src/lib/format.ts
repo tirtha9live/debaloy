@@ -14,11 +14,23 @@ export function formatInr(value: number | null | undefined): string {
 }
 
 export function parseAmount(raw: FormDataEntryValue | string | null | undefined): number {
-  if (raw === null || raw === undefined) return 0;
+  return parseOptionalAmount(raw) ?? 0;
+}
+
+export function parseOptionalAmount(raw: FormDataEntryValue | string | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
   const text = String(raw).trim().replace(/,/g, '');
-  if (!text) return 0;
+  if (!text) return null;
   const value = Number(text);
-  return Number.isFinite(value) ? value : 0;
+  return Number.isFinite(value) ? value : null;
+}
+
+export function roundAmount(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+export function amountsEqual(left: number, right: number): boolean {
+  return roundAmount(left) === roundAmount(right);
 }
 
 export function formatDateInput(value: string | null | undefined): string {

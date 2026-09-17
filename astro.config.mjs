@@ -26,7 +26,7 @@ export default defineConfig({
       include: ['exceljs'],
     },
     ssr: {
-      noExternal: ['xlsx', 'html-to-image', 'exceljs'],
+      noExternal: ['xlsx', 'exceljs'],
       optimizeDeps: {
         include: ['exceljs'],
       },

@@ -1,6 +1,6 @@
 """
 Debaloy Flat Owners Welfare Association — FY 2026-27 Workbook Builder
-Sheets: Handover | Maintenance | Puja Subscription | Income | Expenses | Receipts & Payments 2027
+Sheets: Handover | Maintenance | Puja Subscription | Income | Expenses | Withdrawals | Receipts & Payments 2027
 """
 
 import os
@@ -251,7 +251,7 @@ def build_handover(wb):
 
 
 # ── Sheet 2: Maintenance ──────────────────────────────────────────────────────
-# Layout: A=Flat, B=Owner, then per month 2 cols: Amt + Mode (C/D, E/F, … Y/Z)
+# Layout: A=Flat, B=Resident, then per month 2 cols: Amt + Mode (C/D, E/F, … Y/Z)
 # AA=Total Bank (SUMPRODUCT), AB=Total Cash (SUMPRODUCT), AC=Grand Total
 # Mode cells pre-filled "Cash"; dropdown Bank/Cash.
 def build_maintenance(wb):
@@ -264,11 +264,12 @@ def build_maintenance(wb):
     ws["A2"].alignment = Alignment(horizontal="center")
     ws.merge_cells("A3:AC3")
     ws["A3"].value = ("Enter amount and select mode (Bank/Cash) for each month. "
-                      "Mode defaults to Cash. R&P totals update automatically.")
+                      "Mode defaults to Cash. Blank = not recorded. "
+                      "0 = payment not required (paid in advance, or paid some operating expenses for the society, etc.).")
     ws["A3"].font  = fnt(size=9, color=SUBTEXT, italic=True)
     ws["A3"].alignment = Alignment(horizontal="center")
 
-    # ── Column layout: A=Flat, B=Owner, then 12 months × 2 cols each ──
+    # ── Column layout: A=Flat, B=Resident, then 12 months × 2 cols each ──
     # Month mi → Amt col = 3 + mi*2, Mode col = 4 + mi*2
     amt_mode_cols = []   # list of (amt_letter, mode_letter)
     for mi, month in enumerate(MONTHS):
@@ -276,9 +277,9 @@ def build_maintenance(wb):
         mc = get_column_letter(3 + mi * 2 + 1)  # D, F, H, ...
         amt_mode_cols.append((ac, mc))
 
-    # ── Row 5: Flat/Owner headers + month name merged over Amt+Mode ──
+    # ── Row 5: Flat/Resident headers + month name merged over Amt+Mode ──
     hdr(ws, "A5", "Flat",  sz=10); hdr(ws, "A6", "",    sz=10); ws.merge_cells("A5:A6")
-    hdr(ws, "B5", "Owner", sz=10); hdr(ws, "B6", "",    sz=10); ws.merge_cells("B5:B6")
+    hdr(ws, "B5", "Resident", sz=10); hdr(ws, "B6", "",    sz=10); ws.merge_cells("B5:B6")
 
     for (ac, mc), month in zip(amt_mode_cols, MONTHS):
         hdr(ws, f"{ac}5", month, sz=10)
@@ -397,7 +398,7 @@ def build_puja(wb):
     ws["A3"].font = fnt(bold=True, size=10, color=PUJA_COL)
     ws["A3"].alignment = Alignment(horizontal="center")
 
-    for col, label in enumerate(["Flat", "Owner", "Amount (Rs.)"], 1):
+    for col, label in enumerate(["Flat", "Resident", "Amount (Rs.)"], 1):
         hdr(ws, f"{get_column_letter(col)}5", label, bg=PUJA_COL, sz=10)
 
     for ri, (flat, owner) in enumerate(OWNERS, 6):
@@ -615,7 +616,54 @@ def build_expenses(wb):
     ws.freeze_panes = "A5"
 
 
-# ── Sheet 5: Receipts & Payments 2027 ────────────────────────────────────────
+# ── Sheet 5: Withdrawals (bank to cash in hand) ───────────────────────────────
+def build_withdrawals(wb):
+    ws = wb.create_sheet("Withdrawals")
+
+    ws.merge_cells("A1:C1")
+    ttl(ws, "A1", "Debaloy Flat Owners Welfare Association — Withdrawals Tracker", color=TEAL, sz=12)
+    ws.row_dimensions[1].height = 20
+
+    ws.merge_cells("A2:C2")
+    ws["A2"].value = (
+        "Cash taken out of the bank. Increases cash in hand and decreases cash in bank "
+        "by the same amount. Not a Receipts & Payments line."
+    )
+    ws["A2"].font = fnt(size=9, color=SUBTEXT, italic=True)
+    ws["A2"].alignment = Alignment(horizontal="center", wrap_text=True)
+    ws.row_dimensions[2].height = 24
+
+    for col, label in enumerate(["Date", "Amount (Rs.)", "Note"], 1):
+        hdr(ws, f"{get_column_letter(col)}4", label, bg=TEAL, sz=10)
+
+    for r in range(5, 25):
+        c = ws[f"A{r}"]
+        c.border = bdr()
+        c.number_format = "DD-MMM-YYYY"
+        c.fill = f(CREAM)
+        c.font = fnt(size=11, color=BLUE_TEXT)
+        amt = ws[f"B{r}"]
+        amt.fill = f(CREAM)
+        amt.border = bdr()
+        amt.font = fnt(size=11, color=BLUE_TEXT)
+        amt.number_format = INR
+        note = ws[f"C{r}"]
+        note.fill = f(CREAM)
+        note.border = bdr()
+        note.font = fnt(size=11, color=BLUE_TEXT)
+
+    tot_row = 25
+    tot(ws, f"A{tot_row}", val="Total withdrawn", fmt="General")
+    tot(ws, f"B{tot_row}", formula="SUM(B5:B24)")
+    hdr(ws, f"C{tot_row}", "", bg=TEAL)
+
+    ws.column_dimensions["A"].width = 13
+    ws.column_dimensions["B"].width = 16
+    ws.column_dimensions["C"].width = 42
+    ws.freeze_panes = "A5"
+
+
+# ── Sheet 6: Receipts & Payments 2027 ────────────────────────────────────────
 def build_rp(wb):
     ws = wb.create_sheet("Receipts & Payments 2027")
     ws.merge_cells("A1:D1"); ttl(ws, "A1", "Debaloy Flat Owners Welfare Association")
@@ -705,7 +753,7 @@ def build_rp(wb):
     ws["D10"].alignment = Alignment(horizontal="right", vertical="center")
 
     # Row 14: flat owners' puja subscription — cash total from Puja sheet
-    rp_row(14, "  Puja Subscription (flat owners)",
+    rp_row(14, "  Puja Subscription (residents)",
                f"'Puja Subscription'!C{puja_total_row}",
                "  Printing & Stationery", sumif_exp("Printing & Stationery"),
                a_linked=True, b_formula=True, d_formula=True)
@@ -809,13 +857,13 @@ def build_rp(wb):
     ws[f"D{closing_row}"].fill = f(SECTION); ws[f"D{closing_row}"].border = bdr()
     ws[f"A{closing_row}"].border = bdr(); ws[f"B{closing_row}"].border = bdr()
 
-    pln(ws, f"C{cash_hand}", "  Cash in Hand (enter at year end)")
+    pln(ws, f"C{cash_hand}", "  Cash in Hand")
     ws[f"D{cash_hand}"].value = 0; ws[f"D{cash_hand}"].number_format = INR
     ws[f"D{cash_hand}"].fill = f(CREAM); ws[f"D{cash_hand}"].border = bdr()
     ws[f"D{cash_hand}"].font = fnt(size=11, color=BLUE_TEXT)
     ws[f"A{cash_hand}"].border = bdr(); ws[f"B{cash_hand}"].border = bdr()
 
-    pln(ws, f"C{cash_bank}", "  Cash in Bank (enter at year end)")
+    pln(ws, f"C{cash_bank}", "  Cash in Bank")
     ws[f"D{cash_bank}"].value = 0; ws[f"D{cash_bank}"].number_format = INR
     ws[f"D{cash_bank}"].fill = f(CREAM); ws[f"D{cash_bank}"].border = bdr()
     ws[f"D{cash_bank}"].font = fnt(size=11, color=BLUE_TEXT)
@@ -860,6 +908,7 @@ def main():
     build_puja(wb)
     build_income(wb)
     build_expenses(wb)
+    build_withdrawals(wb)
     build_rp(wb)
     out = os.path.join(os.path.dirname(__file__), "Debaloy_2026-27.xlsx")
     wb.save(out)

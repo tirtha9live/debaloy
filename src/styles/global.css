@@ -46,6 +46,7 @@
     scroll-behavior: smooth;
     scroll-padding-top: 5.5rem;
     text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
@@ -124,9 +125,42 @@
   }
 
   .sheet-scroll {
-    overflow: auto;
-    overscroll-behavior: contain;
+    overflow-x: auto;
+    overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* Bounded 2D scroll pane: flat/resident + month headers stay visible (see docs/ui-preferences). */
+  .sheet-freeze {
+    max-height: calc(100svh - 13.5rem);
+    /* Chain vertical scroll to the page at top/bottom; keep horizontal pan inside the grid. */
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: auto;
+    touch-action: pan-x pan-y;
+  }
+
+  body:has(#sticky-save-sheet) .sheet-freeze {
+    max-height: calc(100svh - 20.5rem);
+  }
+
+  @media (max-width: 1023px) {
+    .sheet-freeze {
+      max-height: calc(100svh - 14rem);
+    }
+
+    body:has(#sticky-save-sheet) .sheet-freeze {
+      max-height: calc(100svh - 21rem);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .sheet-freeze {
+      max-height: calc(100svh - 11rem);
+    }
+
+    body:has(#sticky-save-sheet) .sheet-freeze {
+      max-height: calc(100svh - 11rem);
+    }
   }
 
   .sheet-table {
@@ -188,7 +222,7 @@
     min-width: 3.5rem;
   }
 
-  .sheet-sticky-owner {
+  .sheet-sticky-resident {
     left: 3.5rem;
     max-width: 8.5rem;
     min-width: 8.5rem;
@@ -196,8 +230,76 @@
     text-overflow: ellipsis;
   }
 
+  @media (max-width: 1023px) {
+    .sheet-sticky-flat {
+      min-width: 2.75rem;
+      width: 2.75rem;
+      max-width: 2.75rem;
+      padding-inline: 6px;
+    }
+
+    .sheet-sticky-resident {
+      left: 2.75rem;
+      width: 6.75rem;
+      min-width: 6.75rem;
+      max-width: 6.75rem;
+      white-space: normal;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      vertical-align: top;
+      line-height: 1.25;
+    }
+
+    .sheet-table .sheet-sticky-resident {
+      white-space: normal;
+    }
+  }
+
+  .sheet-freeze .sheet-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+  }
+
+  .sheet-freeze .sheet-table thead tr:first-child th {
+    height: 2.5rem;
+  }
+
+  .sheet-freeze .sheet-table thead tr + tr th {
+    top: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .sheet-freeze .sheet-table thead .sheet-sticky {
+    z-index: 5;
+    top: 0;
+  }
+
+  .sheet-freeze .sheet-table thead tr + tr .sheet-sticky {
+    top: 0;
+  }
+
+  .sheet-cell-pending {
+    box-shadow: inset 0 0 0 1px rgb(197 48 48 / 0.55);
+  }
+
+  .dark .sheet-cell-pending {
+    box-shadow: inset 0 0 0 1px rgb(248 113 113 / 0.45);
+  }
+
+  .sheet-legend-pending {
+    display: inline-block;
+    padding: 0 0.35rem;
+    box-shadow: inset 0 0 0 1px rgb(197 48 48 / 0.55);
+  }
+
+  .dark .sheet-legend-pending {
+    box-shadow: inset 0 0 0 1px rgb(248 113 113 / 0.45);
+  }
+
   @media (min-width: 1024px) {
-    .sheet-sticky-owner {
+    .sheet-sticky-resident {
       max-width: none;
       min-width: 11rem;
     }
@@ -246,6 +348,81 @@
     .sheet-swipe-hint {
       display: none;
     }
+  }
+
+  .rp-stack-heading {
+    margin: 0;
+    padding: 10px 16px;
+    background: #fafafa;
+    border-bottom: 1px solid var(--color-hairline);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-body);
+  }
+
+  .dark .rp-stack-heading {
+    background: #0f172a;
+    border-color: #1e293b;
+    color: #94a3b8;
+  }
+
+  .rp-stack-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--color-hairline);
+  }
+
+  .dark .rp-stack-row {
+    border-color: #1e293b;
+  }
+
+  .rp-stack-label {
+    min-width: 0;
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .rp-stack-indent {
+    padding-left: 0.75rem;
+  }
+
+  .rp-stack-amount {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .rp-stack-section {
+    background: var(--color-canvas-soft);
+    font-weight: 500;
+  }
+
+  .dark .rp-stack-section {
+    background: #1e293b;
+  }
+
+  .rp-stack-total {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+    font-weight: 500;
+    border-bottom: 0;
+  }
+
+  .dark .rp-stack-total {
+    background: #f1f5f9;
+    color: #020617;
   }
 
   .entry-form {
@@ -297,6 +474,10 @@
       grid-template-columns: 8.5rem 1fr 1fr 6.5rem 8rem auto;
       align-items: end;
       padding: 8px;
+    }
+
+    .entry-form-withdraw {
+      grid-template-columns: 8.5rem 8rem 1fr auto;
     }
 
     .entry-field-wide,

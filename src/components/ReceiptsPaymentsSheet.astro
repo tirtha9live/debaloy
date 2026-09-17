@@ -1,0 +1,213 @@
+---
+import { formatAmount } from '../lib/format';
+
+export type StatementLine = {
+  receiptLabel: string | null;
+  receiptAmount: number | null;
+  receiptSection?: boolean;
+  paymentLabel: string | null;
+  paymentAmount: number | null;
+  paymentSection?: boolean;
+  paymentEditable?: boolean;
+  paymentField?: 'cash_in_hand' | 'cash_in_bank';
+};
+
+export type ClosingField = {
+  computed: number;
+  overridden: boolean;
+  refetch: string;
+  label: string;
+};
+
+interface Props {
+  lines: StatementLine[];
+  receiptTotal: number;
+  paymentTotal: number;
+  canEdit?: boolean;
+  closing?: {
+    cash_in_hand: ClosingField;
+    cash_in_bank: ClosingField;
+  };
+}
+
+const { lines, receiptTotal, paymentTotal, canEdit = false, closing } = Astro.props;
+
+function labelText(value: string | null | undefined) {
+  return (value ?? '').replace(/^\s+/, '');
+}
+
+function indented(value: string | null | undefined) {
+  return Boolean(value && /^\s/.test(value));
+}
+
+function showSide(
+  line: StatementLine,
+  side: 'receipt' | 'payment',
+) {
+  const label = side === 'receipt' ? line.receiptLabel : line.paymentLabel;
+  const amount = side === 'receipt' ? line.receiptAmount : line.paymentAmount;
+  const section = side === 'receipt' ? line.receiptSection : line.paymentSection;
+  return Boolean(section || labelText(label) || amount != null);
+}
+
+function closingFor(line: StatementLine) {
+  if (!closing || !line.paymentField) return null;
+  return closing[line.paymentField];
+}
+---
+
+<div class="rp-stack lg:hidden" data-rp-inputs="stack">
+  <section>
+    <h2 class="rp-stack-heading">Receipts</h2>
+    {lines.map((line) =>
+      showSide(line, 'receipt') ? (
+        <div class:list={['rp-stack-row', line.receiptSection && 'rp-stack-section']}>
+          <p class:list={['rp-stack-label', indented(line.receiptLabel) && 'rp-stack-indent']}>
+            {labelText(line.receiptLabel)}
+          </p>
+          <p class="rp-stack-amount">{line.receiptAmount === null ? '' : formatAmount(line.receiptAmount)}</p>
+        </div>
+      ) : null,
+    )}
+    <div class="rp-stack-row rp-stack-total">
+      <p class="rp-stack-label">Total</p>
+      <p class="rp-stack-amount">{formatAmount(receiptTotal)}</p>
+    </div>
+  </section>
+
+  <section class="border-t border-hairline dark:border-slate-800">
+    <h2 class="rp-stack-heading">Payments</h2>
+    {lines.map((line) => {
+      if (!showSide(line, 'payment')) return null;
+      const field = closingFor(line);
+      return (
+        <div class:list={['rp-stack-row', line.paymentSection && 'rp-stack-section']}>
+          <p class:list={['rp-stack-label', indented(line.paymentLabel) && 'rp-stack-indent']}>
+            {labelText(line.paymentLabel)}
+          </p>
+          {line.paymentEditable && canEdit && field && line.paymentField ? (
+            <div class="flex min-w-0 items-center justify-end gap-1">
+              <input
+                class="sheet-input max-w-28 min-w-0 flex-1 text-right"
+                type="text"
+                inputmode="decimal"
+                name={line.paymentField}
+                value={String(line.paymentAmount ?? 0)}
+                data-change-label={field.label}
+                data-computed={String(field.computed)}
+                data-from-records={field.overridden ? '0' : '1'}
+                aria-label={field.overridden ? `${field.label}, overridden` : `${field.label}, from records`}
+                autocomplete="off"
+              />
+              <button
+                type="submit"
+                name="intent"
+                value={field.refetch}
+                class:list={[
+                  'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md',
+                  field.overridden
+                    ? 'text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800'
+                    : 'text-mute hover:bg-canvas-soft hover:text-ink dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100',
+                ]}
+                title={field.overridden ? 'Overridden. Fetch from records.' : 'From records. Fetch again to restore.'}
+                aria-label={
+                  field.overridden
+                    ? `Fetch ${field.label} from records`
+                    : `${field.label} is from records. Fetch again to restore.`
+                }
+              >
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"></path>
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <p class="rp-stack-amount">{line.paymentAmount === null ? '' : formatAmount(line.paymentAmount)}</p>
+          )}
+        </div>
+      );
+    })}
+    <div class="rp-stack-row rp-stack-total">
+      <p class="rp-stack-label">Total</p>
+      <p class="rp-stack-amount">{formatAmount(paymentTotal)}</p>
+    </div>
+  </section>
+</div>
+
+<div class="sheet-scroll max-lg:hidden" data-rp-inputs="table">
+  <table class="sheet-table w-full">
+    <thead>
+      <tr>
+        <th class="sheet-sticky min-w-56 text-left">Receipts</th>
+        <th class="text-right">Amount (Rs.)</th>
+        <th class="text-left">Payments</th>
+        <th class="text-right">Amount (Rs.)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {lines.map((line) => {
+        const field = closingFor(line);
+        return (
+          <tr>
+            <td class:list={['sheet-sticky min-w-56', line.receiptSection && 'bg-canvas-soft font-medium dark:bg-slate-800']}>
+              {line.receiptLabel ?? ''}
+            </td>
+            <td class:list={['text-right tabular-nums', line.receiptSection && 'bg-canvas-soft dark:bg-slate-800']}>
+              {line.receiptAmount === null ? '' : formatAmount(line.receiptAmount)}
+            </td>
+            <td class:list={[line.paymentSection && 'bg-canvas-soft font-medium dark:bg-slate-800']}>
+              {line.paymentLabel ?? ''}
+            </td>
+            <td class:list={['text-right tabular-nums', line.paymentSection && 'bg-canvas-soft dark:bg-slate-800']}>
+              {line.paymentEditable && canEdit && field && line.paymentField ? (
+                <div class="flex items-center justify-end gap-1">
+                  <input
+                    class="sheet-input min-w-0 flex-1 text-right"
+                    type="text"
+                    inputmode="decimal"
+                    name={line.paymentField}
+                    value={String(line.paymentAmount ?? 0)}
+                    data-change-label={field.label}
+                    data-computed={String(field.computed)}
+                    data-from-records={field.overridden ? '0' : '1'}
+                    aria-label={field.overridden ? `${field.label}, overridden` : `${field.label}, from records`}
+                    autocomplete="off"
+                  />
+                  <button
+                    type="submit"
+                    name="intent"
+                    value={field.refetch}
+                    class:list={[
+                      'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md',
+                      field.overridden
+                        ? 'text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800'
+                        : 'text-mute hover:bg-canvas-soft hover:text-ink dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100',
+                    ]}
+                    title={field.overridden ? 'Overridden. Fetch from records.' : 'From records. Fetch again to restore.'}
+                    aria-label={
+                      field.overridden
+                        ? `Fetch ${field.label} from records`
+                        : `${field.label} is from records. Fetch again to restore.`
+                    }
+                  >
+                    <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"></path>
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                line.paymentAmount === null ? '' : formatAmount(line.paymentAmount)
+              )}
+            </td>
+          </tr>
+        );
+      })}
+      <tr class="bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950">
+        <td class="sheet-sticky bg-primary font-medium dark:bg-slate-100">Total</td>
+        <td class="text-right font-medium tabular-nums">{formatAmount(receiptTotal)}</td>
+        <td class="font-medium">Total</td>
+        <td class="text-right font-medium tabular-nums">{formatAmount(paymentTotal)}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

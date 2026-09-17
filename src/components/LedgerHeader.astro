@@ -1,6 +1,6 @@
 ---
-import { withView } from '../lib/auth';
-import { formatUpdatedOn } from '../lib/format';
+import { withLedger } from '../lib/auth';
+import { displayDate, formatUpdatedOn } from '../lib/format';
 import { getLastUpdatedAt } from '../lib/ledger';
 
 interface Props {
@@ -13,8 +13,11 @@ interface Props {
 const { sheet, title, subtitle, canEdit = false } = Astro.props;
 const session = Astro.locals.session;
 const viewAsResident = Astro.locals.viewAsResident;
+const year = Astro.locals.ledgerYear;
+const frozen = Boolean(year?.endDate);
 const welcome = session?.role === 'admin' && !viewAsResident ? 'Welcome, treasurer.' : 'Welcome, resident.';
 const lastUpdatedLabel = formatUpdatedOn(await getLastUpdatedAt());
+const exportYear = frozen && year ? `&year=${year.id}` : '';
 
 const actionClass =
   'inline-flex h-11 w-full items-center justify-center gap-2 rounded-pill px-4 text-sm font-medium transition-colors duration-200 lg:h-10 lg:w-auto';
@@ -30,15 +33,21 @@ const ghostClass =
     )}
     <h1 class="mt-2 text-3xl font-semibold tracking-tight text-ink dark:text-slate-100 sm:text-4xl">{title}</h1>
     <p class="mt-2 max-w-2xl text-sm leading-6 text-pretty text-body dark:text-slate-300">{subtitle}</p>
+    {frozen && year && (
+      <p class="mt-3 rounded-md bg-canvas-soft px-3 py-2 text-sm text-body dark:bg-slate-800 dark:text-slate-300">
+        Viewing frozen {year.label} (closed {displayDate(year.endDate)}). Read-only snapshot.
+        <a class="ml-1 underline" href={withLedger('/ledger/years', { viewAsResident, ledgerYear: undefined })}>All years</a>
+      </p>
+    )}
   </div>
   <div class="grid w-full grid-cols-2 gap-2 lg:flex lg:w-auto lg:flex-wrap lg:items-center">
     {session?.role === 'admin' && (
       viewAsResident ? (
-        <a href={Astro.url.pathname} class:list={[actionClass, ghostClass, 'col-span-2 lg:col-span-1']}>
+        <a href={withLedger(Astro.url.pathname, { viewAsResident: false, ledgerYear: year })} class:list={[actionClass, ghostClass, 'col-span-2 lg:col-span-1']}>
           Back to treasurer
         </a>
       ) : (
-        <a href={withView(Astro.url.pathname, true)} class:list={[actionClass, ghostClass, 'col-span-2 lg:col-span-1']}>
+        <a href={withLedger(Astro.url.pathname, { viewAsResident: true, ledgerYear: year })} class:list={[actionClass, ghostClass, 'col-span-2 lg:col-span-1']}>
           View as resident
         </a>
       )
@@ -68,7 +77,7 @@ const ghostClass =
         class="absolute inset-x-0 z-20 mt-2 hidden overflow-hidden rounded-xl border border-hairline bg-canvas py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900 lg:inset-x-auto lg:right-0 lg:w-56"
       >
         <a
-          href="/api/export?kind=formatted"
+          href={`/api/export?kind=formatted${exportYear}`}
           role="menuitem"
           data-excel="formatted"
           class="flex min-h-11 items-center px-3 text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
@@ -76,22 +85,13 @@ const ghostClass =
           Excel formatted
         </a>
         <a
-          href="/api/export?kind=raw"
+          href={`/api/export?kind=raw${exportYear}`}
           role="menuitem"
           data-excel="raw"
           class="flex min-h-11 items-center px-3 text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
         >
           Excel raw
         </a>
-        <button
-          type="button"
-          role="menuitem"
-          id="download-img"
-          data-sheet={sheet}
-          class="flex min-h-11 w-full items-center px-3 text-left text-sm text-ink hover:bg-canvas-soft dark:text-slate-100 dark:hover:bg-slate-800"
-        >
-          Image
-        </button>
         {Astro.locals.canEdit && (
           <>
             <a

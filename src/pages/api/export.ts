@@ -22,12 +22,13 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
 
   const excelKind: ExportKind = kind === 'raw' ? 'raw' : 'formatted';
   const { buildWorkbookBuffer, exportFilename } = await import('../../lib/excel');
-  const bytes = await buildWorkbookBuffer(excelKind);
+  const year = locals.ledgerYear;
+  const bytes = await buildWorkbookBuffer(excelKind, year);
   await touchVisitor(locals.session, request, 'download');
   return new Response(bytes, {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${exportFilename(excelKind)}"`,
+      'Content-Disposition': `attachment; filename="${exportFilename(excelKind, year?.label)}"`,
       'Cache-Control': 'no-store',
     },
   });

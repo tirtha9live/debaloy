@@ -1,0 +1,85 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import { ASSOCIATION } from '../../lib/constants';
+import { withView } from '../../lib/auth';
+import { displayDate, formatInr } from '../../lib/format';
+import { loadLedger } from '../../lib/ledger';
+import { currentYear } from '../../lib/years';
+
+const years = Astro.locals.ledgerYears ?? [];
+const canManage = Astro.locals.session?.role === 'admin' && !Astro.locals.viewAsResident;
+const viewAsResident = Astro.locals.viewAsResident;
+const open = years.find((year) => year.endDate == null) ?? (await currentYear());
+const frozenCount = years.filter((year) => year.endDate).length;
+const snapshot = await loadLedger(open);
+const error = Astro.url.searchParams.get('error');
+---
+
+<Layout title={`Years · ${ASSOCIATION}`} noindex>
+  <Navigation current="years" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="years"
+      title="Years."
+      subtitle={Astro.locals.canEdit
+        ? 'Books close on the annual meeting date, usually between August and October before Durga Puja. Closed years then move to Archive as read-only snapshots.'
+        : 'Books close on the annual meeting date. Closed years are in Archive as read-only snapshots.'}
+    />
+
+    {error && (
+      <p class="mt-6 rounded-md bg-canvas-soft px-3 py-2 text-sm text-body dark:bg-slate-800 dark:text-slate-300">{error}</p>
+    )}
+
+    <div class="mt-8 grid gap-6 lg:grid-cols-2">
+      <section class="card-elevate rounded-xl bg-canvas p-5 dark:bg-slate-900 sm:p-6">
+        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Current year</p>
+        <h2 class="mt-2 text-xl font-semibold tracking-tight">{open.label}</h2>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">
+          Started {displayDate(open.startDate)}. Open until the treasurer closes the books.
+        </p>
+        <p class="mt-3 text-sm text-body dark:text-slate-300">
+          Opening cash {formatInr(open.openingCash)} · Opening bank {formatInr(open.openingBank)}
+        </p>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">
+          Closing so far {formatInr(snapshot.cashInHand)} cash · {formatInr(snapshot.cashInBank)} bank
+        </p>
+        {canManage && (
+          <form method="post" action="/api/ledger/years" class="mt-5 space-y-3" data-ledger-form>
+            <input type="hidden" name="intent" value="close" />
+            <label class="block text-sm">
+              <span class="entry-label">Annual meeting / books close</span>
+              <input class="sheet-input mt-1 max-w-xs" type="date" name="meeting_date" min={open.startDate} required />
+            </label>
+            <p class="text-sm leading-6 text-body dark:text-slate-300">
+              That day stays in this year. The next year starts the following day, with this closing cash carried forward. Dated income, expenses, and withdrawals follow the date. Maintenance months follow the 1st of each month. Puja Contribution stays with the year it was recorded on. The closed year then appears in Archive.
+            </p>
+            <button type="submit" class="inline-flex h-11 items-center rounded-md bg-primary px-4 text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950">
+              Close books and start next year
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section class="card-elevate rounded-xl bg-canvas p-5 dark:bg-slate-900 sm:p-6">
+        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Archive</p>
+        <h2 class="mt-2 text-xl font-semibold tracking-tight">Closed years</h2>
+        <p class="mt-3 text-sm text-body dark:text-slate-300">
+          {frozenCount === 0
+            ? 'No closed year yet. The original takeover record is in Archive.'
+            : `${frozenCount === 1 ? 'One closed year is' : `${frozenCount} closed years are`} in Archive, with the original takeover record.`}
+        </p>
+        <a
+          href={withView('/ledger/handover', viewAsResident)}
+          class="mt-4 inline-flex h-11 items-center rounded-md border border-hairline px-4 text-sm dark:border-slate-700"
+        >
+          Open Archive
+        </a>
+      </section>
+    </div>
+  </main>
+  <Footer />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

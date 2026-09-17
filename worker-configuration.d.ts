@@ -5,6 +5,7 @@ interface __BaseEnv_Env {
 	SESSION: KVNamespace;
 	DB: D1Database;
 	ASSETS: Fetcher;
+	DEBUG: string;
 	RESIDENT_PASSWORD: string;
 	ADMIN_PASSWORD: string;
 }
@@ -16,7 +17,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "RESIDENT_PASSWORD" | "ADMIN_PASSWORD">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "DEBUG" | "RESIDENT_PASSWORD" | "ADMIN_PASSWORD">> {}
 }
 
 // Begin runtime types

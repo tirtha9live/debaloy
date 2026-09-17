@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS flats (
   id TEXT PRIMARY KEY,
-  owner TEXT NOT NULL,
+  resident TEXT NOT NULL,
   sort_order INTEGER NOT NULL
 );
 
@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE INDEX IF NOT EXISTS idx_entries_kind ON entries (kind);
 CREATE INDEX IF NOT EXISTS idx_entries_kind_category ON entries (kind, category);
 
-INSERT INTO flats (id, owner, sort_order) VALUES
+INSERT INTO flats (id, resident, sort_order) VALUES
   ('403', 'Rajeshree Saha', 1),
   ('402', 'Poushali Deb Barman', 2),
   ('401', 'Somnath NagChoudhury', 3),

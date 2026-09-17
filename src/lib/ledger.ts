@@ -2,22 +2,29 @@ import { env } from 'cloudflare:workers';
 import {
   EXPENSE_TYPES,
   FLATS,
-  HANDOVER_CLOSING_BANK,
-  HANDOVER_CLOSING_CASH,
   INCOME_TYPES,
-  MONTHS,
   type CategoryKind,
   type PayMode,
 } from './constants';
+import { roundAmount } from './format';
+import {
+  currentYear,
+  dateInYear,
+  getYear,
+  monthsForYear,
+  saveYearClosing,
+  clearYearClosingOverride,
+  type LedgerYear,
+} from './years';
 
 export type MaintenanceCell = {
-  amount: number;
+  amount: number | null;
   mode: PayMode;
 };
 
 export type MaintenanceRow = {
   flatId: string;
-  owner: string;
+  resident: string;
   months: Record<string, MaintenanceCell>;
   totalBank: number;
   totalCash: number;
@@ -34,6 +41,13 @@ export type LedgerEntry = {
   amount: number;
 };
 
+export type Withdrawal = {
+  id: number;
+  date: string | null;
+  amount: number;
+  note: string;
+};
+
 export type LedgerCategory = {
   id: number;
   kind: CategoryKind;
@@ -43,6 +57,8 @@ export type LedgerCategory = {
 };
 
 export type LedgerSnapshot = {
+  year: LedgerYear;
+  months: string[];
   maintenance: MaintenanceRow[];
   maintenanceTotals: {
     months: Record<string, number>;
@@ -50,12 +66,18 @@ export type LedgerSnapshot = {
     cash: number;
     grand: number;
   };
-  puja: Array<{ flatId: string; owner: string; amount: number }>;
+  puja: Array<{ flatId: string; resident: string; amount: number }>;
   pujaTotal: number;
   categories: LedgerCategory[];
   entries: LedgerEntry[];
+  withdrawals: Withdrawal[];
+  withdrawalsTotal: number;
   cashInHand: number;
   cashInBank: number;
+  computedCashInHand: number;
+  computedCashInBank: number;
+  cashInHandOverride: boolean;
+  cashInBankOverride: boolean;
   lastUpdatedAt: string | null;
 };
 
@@ -67,6 +89,7 @@ export type RpLine = {
   paymentAmount: number | null;
   paymentSection?: boolean;
   paymentEditable?: boolean;
+  paymentField?: 'cash_in_hand' | 'cash_in_bank';
 };
 
 function db() {
@@ -84,31 +107,70 @@ function sumByCategory(entries: LedgerEntry[], kind: CategoryKind, name: string)
     .reduce((sum, entry) => sum + entry.amount, 0);
 }
 
-export async function loadLedger(): Promise<LedgerSnapshot> {
+function sumByMode(entries: LedgerEntry[], kind: CategoryKind, mode: PayMode): number {
+  return entries
+    .filter((entry) => entry.kind === kind && entry.mode === mode)
+    .reduce((sum, entry) => sum + entry.amount, 0);
+}
+
+export function computeClosingBalances(input: {
+  openingCash: number;
+  openingBank: number;
+  cashMaintenance: number;
+  bankMaintenance: number;
+  pujaTotal: number;
+  entries: LedgerEntry[];
+  withdrawalsTotal?: number;
+}) {
+  const withdrawalsTotal = input.withdrawalsTotal ?? 0;
+  return {
+    cashInHand: roundAmount(
+      input.openingCash +
+        input.cashMaintenance +
+        input.pujaTotal +
+        sumByMode(input.entries, 'income', 'Cash') -
+        sumByMode(input.entries, 'expense', 'Cash') +
+        withdrawalsTotal,
+    ),
+    cashInBank: roundAmount(
+      input.openingBank +
+        input.bankMaintenance +
+        sumByMode(input.entries, 'income', 'Bank') -
+        sumByMode(input.entries, 'expense', 'Bank') -
+        withdrawalsTotal,
+    ),
+  };
+}
+
+export async function loadLedger(selectedYear?: LedgerYear): Promise<LedgerSnapshot> {
+  const year = selectedYear ?? (await currentYear());
+  const months = monthsForYear(year.startDate, year.endDate);
   const database = db();
-  const [maintenanceRows, pujaRows, categoryRows, entryRows, settingsRows] = await database.batch([
+  const [maintenanceRows, pujaRows, categoryRows, entryRows, withdrawalRows] = await database.batch([
     database.prepare(
       'SELECT flat_id, month, amount, mode FROM maintenance ORDER BY flat_id, month',
     ),
-    database.prepare('SELECT flat_id, amount FROM puja'),
+    database.prepare('SELECT flat_id, amount FROM puja WHERE year_id = ?').bind(year.id),
     database.prepare(
       'SELECT id, kind, name, sort_order, is_builtin FROM categories ORDER BY kind, sort_order, id',
     ),
     database.prepare(
       'SELECT id, kind, date, category, description, mode, amount FROM entries ORDER BY date IS NULL, date, id',
     ),
-    database.prepare('SELECT key, value FROM settings'),
+    database.prepare(
+      'SELECT id, date, amount, note FROM withdrawals ORDER BY date IS NULL, date, id',
+    ),
   ]);
 
   const cells = new Map<string, MaintenanceCell>();
   for (const row of (maintenanceRows.results ?? []) as Array<{
     flat_id: string;
     month: string;
-    amount: number;
+    amount: number | null;
     mode: string;
   }>) {
     cells.set(`${row.flat_id}:${row.month}`, {
-      amount: Number(row.amount) || 0,
+      amount: row.amount == null ? null : Number(row.amount),
       mode: asMode(row.mode),
     });
   }
@@ -119,19 +181,20 @@ export async function loadLedger(): Promise<LedgerSnapshot> {
   }
 
   const maintenance: MaintenanceRow[] = FLATS.map((flat) => {
-    const months: Record<string, MaintenanceCell> = {};
+    const monthCells: Record<string, MaintenanceCell> = {};
     let totalBank = 0;
     let totalCash = 0;
-    for (const month of MONTHS) {
-      const cell = cells.get(`${flat.id}:${month}`) ?? { amount: 0, mode: 'Cash' as const };
-      months[month] = cell;
-      if (cell.mode === 'Bank') totalBank += cell.amount;
-      else totalCash += cell.amount;
+    for (const month of months) {
+      const cell = cells.get(`${flat.id}:${month}`) ?? { amount: null, mode: 'Cash' as const };
+      monthCells[month] = cell;
+      const amount = cell.amount ?? 0;
+      if (cell.mode === 'Bank') totalBank += amount;
+      else totalCash += amount;
     }
     return {
       flatId: flat.id,
-      owner: flat.owner,
-      months,
+      resident: flat.resident,
+      months: monthCells,
       totalBank,
       totalCash,
       total: totalBank + totalCash,
@@ -139,13 +202,13 @@ export async function loadLedger(): Promise<LedgerSnapshot> {
   });
 
   const monthTotals: Record<string, number> = {};
-  for (const month of MONTHS) {
-    monthTotals[month] = maintenance.reduce((sum, row) => sum + row.months[month].amount, 0);
+  for (const month of months) {
+    monthTotals[month] = maintenance.reduce((sum, row) => sum + (row.months[month].amount ?? 0), 0);
   }
 
   const puja = FLATS.map((flat) => ({
     flatId: flat.id,
-    owner: flat.owner,
+    resident: flat.resident,
     amount: pujaMap.get(flat.id) ?? 0,
   }));
 
@@ -171,36 +234,68 @@ export async function loadLedger(): Promise<LedgerSnapshot> {
     description: string | null;
     mode: string;
     amount: number;
-  }>).map((row) => ({
-    id: row.id,
-    kind: row.kind,
-    date: row.date,
-    category: row.category,
-    description: row.description ?? '',
-    mode: asMode(row.mode),
-    amount: Number(row.amount) || 0,
-  }));
+  }>)
+    .map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      date: row.date,
+      category: row.category,
+      description: row.description ?? '',
+      mode: asMode(row.mode),
+      amount: Number(row.amount) || 0,
+    }))
+    .filter((entry) => dateInYear(entry.date, year));
 
-  const settings = new Map<string, string>();
-  for (const row of (settingsRows.results ?? []) as Array<{ key: string; value: string }>) {
-    settings.set(row.key, row.value);
-  }
+  const withdrawals = ((withdrawalRows.results ?? []) as Array<{
+    id: number;
+    date: string | null;
+    amount: number;
+    note: string | null;
+  }>)
+    .map((row) => ({
+      id: row.id,
+      date: row.date,
+      amount: Number(row.amount) || 0,
+      note: row.note ?? '',
+    }))
+    .filter((row) => dateInYear(row.date, year));
+  const withdrawalsTotal = withdrawals.reduce((sum, row) => sum + row.amount, 0);
+
+  const maintenanceTotals = {
+    months: monthTotals,
+    bank: maintenance.reduce((sum, row) => sum + row.totalBank, 0),
+    cash: maintenance.reduce((sum, row) => sum + row.totalCash, 0),
+    grand: maintenance.reduce((sum, row) => sum + row.total, 0),
+  };
+  const pujaTotal = puja.reduce((sum, row) => sum + row.amount, 0);
+  const computed = computeClosingBalances({
+    openingCash: year.openingCash,
+    openingBank: year.openingBank,
+    cashMaintenance: maintenanceTotals.cash,
+    bankMaintenance: maintenanceTotals.bank,
+    pujaTotal,
+    entries,
+    withdrawalsTotal,
+  });
 
   return {
+    year,
+    months,
     maintenance,
-    maintenanceTotals: {
-      months: monthTotals,
-      bank: maintenance.reduce((sum, row) => sum + row.totalBank, 0),
-      cash: maintenance.reduce((sum, row) => sum + row.totalCash, 0),
-      grand: maintenance.reduce((sum, row) => sum + row.total, 0),
-    },
+    maintenanceTotals,
     puja,
-    pujaTotal: puja.reduce((sum, row) => sum + row.amount, 0),
+    pujaTotal,
     categories,
     entries,
-    cashInHand: Number(settings.get('cash_in_hand') ?? 0) || 0,
-    cashInBank: Number(settings.get('cash_in_bank') ?? 0) || 0,
-    lastUpdatedAt: settings.get('last_updated_at') ?? null,
+    withdrawals,
+    withdrawalsTotal,
+    computedCashInHand: computed.cashInHand,
+    computedCashInBank: computed.cashInBank,
+    cashInHandOverride: year.cashInHandOverride,
+    cashInBankOverride: year.cashInBankOverride,
+    cashInHand: year.cashInHandOverride ? Number(year.cashInHand ?? 0) || 0 : computed.cashInHand,
+    cashInBank: year.cashInBankOverride ? Number(year.cashInBank ?? 0) || 0 : computed.cashInBank,
+    lastUpdatedAt: await getLastUpdatedAt(),
   };
 }
 
@@ -253,13 +348,13 @@ export function buildReceiptsPayments(snapshot: LedgerSnapshot): {
     },
     {
       receiptLabel: '  Bank Balance (Brought Forward)',
-      receiptAmount: HANDOVER_CLOSING_BANK,
+      receiptAmount: snapshot.year.openingBank,
       paymentLabel: "  Sweeper's Salary with Bonus",
       paymentAmount: expense("Sweeper's Salary with Bonus"),
     },
     {
       receiptLabel: '  Cash Balance (Brought Forward)',
-      receiptAmount: HANDOVER_CLOSING_CASH,
+      receiptAmount: snapshot.year.openingCash,
       paymentLabel: '  Lift Maintenance Contract Renewal',
       paymentAmount: expense('Lift Maintenance Contract Renewal'),
     },
@@ -290,7 +385,7 @@ export function buildReceiptsPayments(snapshot: LedgerSnapshot): {
       paymentAmount: expense('Printing & Stationery'),
     },
     {
-      receiptLabel: '  Puja Subscription (flat owners)',
+      receiptLabel: '  Puja Contribution (residents)',
       receiptAmount: snapshot.pujaTotal,
       paymentLabel: '  Donation for Durga Puja & Kali Puja',
       paymentAmount: expense('Donation for Durga Puja & Kali Puja'),
@@ -370,16 +465,18 @@ export function buildReceiptsPayments(snapshot: LedgerSnapshot): {
   lines.push({
     receiptLabel: '',
     receiptAmount: null,
-    paymentLabel: '  Cash in Hand (enter at year end)',
+    paymentLabel: '  Cash in Hand',
     paymentAmount: snapshot.cashInHand,
     paymentEditable: true,
+    paymentField: 'cash_in_hand',
   });
   lines.push({
     receiptLabel: '',
     receiptAmount: null,
-    paymentLabel: '  Cash in Bank (enter at year end)',
+    paymentLabel: '  Cash in Bank',
     paymentAmount: snapshot.cashInBank,
     paymentEditable: true,
+    paymentField: 'cash_in_bank',
   });
 
   const receiptTotal = lines.reduce((sum, line) => sum + (line.receiptAmount ?? 0), 0);
@@ -389,7 +486,7 @@ export function buildReceiptsPayments(snapshot: LedgerSnapshot): {
 }
 
 export async function saveMaintenance(
-  updates: Array<{ flatId: string; month: string; amount: number; mode: PayMode }>,
+  updates: Array<{ flatId: string; month: string; amount: number | null; mode: PayMode }>,
 ) {
   const database = db();
   const statements = updates.map((update) =>
@@ -404,16 +501,16 @@ export async function saveMaintenance(
   if (statements.length) await database.batch([...statements, lastUpdatedStatement(database)]);
 }
 
-export async function savePuja(updates: Array<{ flatId: string; amount: number }>) {
+export async function savePuja(yearId: number, updates: Array<{ flatId: string; amount: number }>) {
   const database = db();
   const statements = updates.map((update) =>
     database
       .prepare(
-        `INSERT INTO puja (flat_id, amount)
-         VALUES (?, ?)
-         ON CONFLICT(flat_id) DO UPDATE SET amount = excluded.amount`,
+        `INSERT INTO puja (flat_id, year_id, amount)
+         VALUES (?, ?, ?)
+         ON CONFLICT(flat_id, year_id) DO UPDATE SET amount = excluded.amount`,
       )
-      .bind(update.flatId, update.amount),
+      .bind(update.flatId, yearId, update.amount),
   );
   if (statements.length) await database.batch([...statements, lastUpdatedStatement(database)]);
 }
@@ -449,6 +546,36 @@ export async function deleteEntry(id: number, kind: CategoryKind) {
   const database = db();
   await database.batch([
     database.prepare('DELETE FROM entries WHERE id = ? AND kind = ?').bind(id, kind),
+    lastUpdatedStatement(database),
+  ]);
+}
+
+export async function createWithdrawal(row: Omit<Withdrawal, 'id'>) {
+  if (row.amount <= 0) return;
+  const database = db();
+  await database.batch([
+    database
+      .prepare('INSERT INTO withdrawals (date, amount, note) VALUES (?, ?, ?)')
+      .bind(row.date, row.amount, row.note),
+    lastUpdatedStatement(database),
+  ]);
+}
+
+export async function updateWithdrawal(row: Withdrawal) {
+  if (row.amount <= 0) return;
+  const database = db();
+  await database.batch([
+    database
+      .prepare('UPDATE withdrawals SET date = ?, amount = ?, note = ? WHERE id = ?')
+      .bind(row.date, row.amount, row.note, row.id),
+    lastUpdatedStatement(database),
+  ]);
+}
+
+export async function deleteWithdrawal(id: number) {
+  const database = db();
+  await database.batch([
+    database.prepare('DELETE FROM withdrawals WHERE id = ?').bind(id),
     lastUpdatedStatement(database),
   ]);
 }
@@ -500,23 +627,19 @@ export async function createCategory(kind: CategoryKind, name: string) {
   ]);
 }
 
-export async function saveSettings(cashInHand: number, cashInBank: number) {
+export async function saveClosingBalances(yearId: number, cashInHand: number, cashInBank: number) {
+  const year = (await getYear(yearId)) ?? (await currentYear());
+  const snapshot = await loadLedger(year);
+  await saveYearClosing(yearId, 'cash_in_hand', cashInHand, snapshot.computedCashInHand);
+  await saveYearClosing(yearId, 'cash_in_bank', cashInBank, snapshot.computedCashInBank);
   const database = db();
-  await database.batch([
-    database
-      .prepare(
-        `INSERT INTO settings (key, value) VALUES ('cash_in_hand', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      .bind(String(cashInHand)),
-    database
-      .prepare(
-        `INSERT INTO settings (key, value) VALUES ('cash_in_bank', ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      )
-      .bind(String(cashInBank)),
-    lastUpdatedStatement(database),
-  ]);
+  await database.batch([lastUpdatedStatement(database)]);
+}
+
+export async function clearClosingOverride(yearId: number, field: 'cash_in_hand' | 'cash_in_bank') {
+  await clearYearClosingOverride(yearId, field);
+  const database = db();
+  await database.batch([lastUpdatedStatement(database)]);
 }
 
 export function emptyEntry(kind: CategoryKind): Omit<LedgerEntry, 'id'> {

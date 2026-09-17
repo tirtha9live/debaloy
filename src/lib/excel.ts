@@ -2,11 +2,9 @@ import ExcelJS from 'exceljs';
 import {
   ADDRESS,
   ASSOCIATION,
-  FY_LABEL,
   HANDOVER_CLOSING_BANK,
   HANDOVER_CLOSING_CASH,
   HANDOVER_LINES,
-  MONTHS,
 } from './constants';
 import {
   buildReceiptsPayments,
@@ -14,6 +12,7 @@ import {
   loadLedger,
   type LedgerSnapshot,
 } from './ledger';
+import type { LedgerYear } from './years';
 
 export type ExportKind = 'formatted' | 'raw';
 
@@ -33,6 +32,7 @@ const INC_GREEN = 'FF1E6B3C';
 const INC_SUMM = 'FFEAF4EC';
 const PUJA_COL = 'FF6B2D8B';
 const PUJA_CREAM = 'FFFAF0FF';
+const WITH_TEAL = 'FF1A5276';
 const INR = '#,##0.00';
 const ARIAL = 'Arial';
 
@@ -135,18 +135,18 @@ function buildRawWorkbook(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) 
   handoverRows.push(['Closing Cash Balance to FY 2026-27:', HANDOVER_CLOSING_CASH]);
   addRawSheet(workbook, 'Handover', handoverRows);
 
-  const maintHeader = ['Flat', 'Owner', ...MONTHS.flatMap((month) => [month, 'Mode']), 'Total Bank', 'Total Cash', 'Total'];
+  const maintHeader = ['Flat', 'Resident', ...snapshot.months.flatMap((month) => [month, 'Mode']), 'Total Bank', 'Total Cash', 'Total'];
   const maintRows: Array<Array<string | number>> = [
     [ASSOCIATION],
-    [`Maintenance Collection Tracker  |  ${FY_LABEL}`],
+    [`Maintenance Collection Tracker  |  ${snapshot.year.label}`],
     [],
     maintHeader,
   ];
   for (const row of snapshot.maintenance) {
     maintRows.push([
       row.flatId,
-      row.owner,
-      ...MONTHS.flatMap((month) => [money(row.months[month].amount), row.months[month].mode]),
+      row.resident,
+      ...snapshot.months.flatMap((month) => [money(row.months[month].amount), row.months[month].mode]),
       money(row.totalBank),
       money(row.totalCash),
       money(row.total),
@@ -155,7 +155,7 @@ function buildRawWorkbook(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) 
   maintRows.push([
     'Grand Total',
     '',
-    ...MONTHS.flatMap((month) => [money(snapshot.maintenanceTotals.months[month]), '']),
+    ...snapshot.months.flatMap((month) => [money(snapshot.maintenanceTotals.months[month]), '']),
     money(snapshot.maintenanceTotals.bank),
     money(snapshot.maintenanceTotals.cash),
     money(snapshot.maintenanceTotals.grand),
@@ -163,25 +163,25 @@ function buildRawWorkbook(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) 
   addRawSheet(workbook, 'Maintenance', maintRows);
 
   const pujaRows: Array<Array<string | number>> = [
-    [`Debaloy — Puja Subscription ${FY_LABEL}`],
+    [`Debaloy — Puja Contribution ${snapshot.year.label}`],
     ['Cash only — one payment per flat.'],
     [],
-    ['Flat', 'Owner', 'Amount (Rs.)'],
+    ['Flat', 'Resident', 'Amount (Rs.)'],
   ];
   for (const row of snapshot.puja) {
-    pujaRows.push([row.flatId, row.owner, money(row.amount)]);
+    pujaRows.push([row.flatId, row.resident, money(row.amount)]);
   }
   pujaRows.push(['Grand Total (Cash)', '', money(snapshot.pujaTotal)]);
-  addRawSheet(workbook, 'Puja Subscription', pujaRows);
+  addRawSheet(workbook, 'Puja Contribution', pujaRows);
 
   for (const kind of ['income', 'expense'] as const) {
-    const titleLabel = kind === 'income' ? 'Income Tracker' : 'Expense Tracker';
+    const titleLabel = kind === 'income' ? 'Other Collections' : 'Expense Tracker';
     const entries = snapshot.entries.filter((entry) => entry.kind === kind);
     const totals = categoryTotals(snapshot, kind);
     const rows: Array<Array<string | number>> = [
       [`${ASSOCIATION} — ${titleLabel}`],
       [],
-      ['Date', `${kind === 'income' ? 'Income' : 'Expense'} Type`, 'Description', 'Mode', 'Amount (Rs.)', '', 'Category Summary', 'Total (Rs.)'],
+      ['Date', `${kind === 'income' ? 'Collection' : 'Expense'} Type`, 'Description', 'Mode', 'Amount (Rs.)', '', 'Category Summary', 'Total (Rs.)'],
     ];
     const max = Math.max(entries.length, totals.length, 1);
     for (let i = 0; i < max; i += 1) {
@@ -205,17 +205,29 @@ function buildRawWorkbook(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) 
       '',
       '',
       '',
-      `TOTAL ${kind === 'income' ? 'INCOME' : 'EXPENSES'}`,
+      `TOTAL ${kind === 'income' ? 'COLLECTIONS' : 'EXPENSES'}`,
       money(totals.reduce((sum, item) => sum + item.total, 0)),
     ]);
-    addRawSheet(workbook, kind === 'income' ? 'Income' : 'Expenses', rows);
+    addRawSheet(workbook, kind === 'income' ? 'Other Collections' : 'Expenses', rows);
   }
+
+  const withdrawalRows: Array<Array<string | number>> = [
+    [`${ASSOCIATION} — Withdrawals Tracker`],
+    ['Cash taken out of the bank. Increases cash in hand and decreases cash in bank. Not a This Year line.'],
+    [],
+    ['Date', 'Amount (Rs.)', 'Note'],
+  ];
+  for (const row of snapshot.withdrawals) {
+    withdrawalRows.push([row.date ?? '', money(row.amount), row.note]);
+  }
+  withdrawalRows.push(['Total withdrawn', money(snapshot.withdrawalsTotal), '']);
+  addRawSheet(workbook, 'Withdrawals', withdrawalRows);
 
   const report = buildReceiptsPayments(snapshot);
   const rpRows: Array<Array<string | number>> = [
     [ASSOCIATION],
     [ADDRESS],
-    ['Receipts & Payments Account — Financial Year 2026-2027 (September 2026 to August 2027)'],
+    [`Receipts & Payments Account — ${snapshot.year.label}`],
     ['Current-year statement. Totals update as new data is added. Same form as the handover.'],
     ['RECEIPTS', 'Amount (Rs.)', 'PAYMENTS', 'Amount (Rs.)'],
   ];
@@ -229,11 +241,11 @@ function buildRawWorkbook(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) 
   }
   rpRows.push(['TOTAL', money(report.receiptTotal), 'TOTAL', money(report.paymentTotal)]);
   rpRows.push([]);
-  rpRows.push(['Closing Bank Balance to FY 2027-28:', money(snapshot.cashInBank)]);
-  rpRows.push(['Closing Cash Balance to FY 2027-28:', money(snapshot.cashInHand)]);
+  rpRows.push(['Closing Bank Balance to next year:', money(snapshot.cashInBank)]);
+  rpRows.push(['Closing Cash Balance to next year:', money(snapshot.cashInHand)]);
   rpRows.push([]);
   rpRows.push(['Signed by: Signature of President', '', 'Signed by: Signature of Secretary & Treasurer']);
-  addRawSheet(workbook, 'This Year 2026-27', rpRows);
+  addRawSheet(workbook, snapshot.year.label, rpRows);
 }
 
 function buildFormattedHandover(workbook: ExcelJS.Workbook) {
@@ -317,27 +329,28 @@ function buildFormattedHandover(workbook: ExcelJS.Workbook) {
 
 function buildFormattedMaintenance(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) {
   const ws = workbook.addWorksheet('Maintenance');
-  const lastCol = 3 + MONTHS.length * 2 + 2;
+  const lastCol = 3 + snapshot.months.length * 2 + 2;
   ws.mergeCells(1, 1, 1, lastCol);
   title(ws.getCell('A1'), ASSOCIATION);
   ws.getRow(1).height = 22;
   ws.mergeCells(2, 1, 2, lastCol);
-  ws.getCell('A2').value = `Maintenance Collection Tracker  |  Sept 2026 to Aug 2027`;
+  ws.getCell('A2').value = `Maintenance Collection Tracker  |  ${snapshot.year.label}`;
   ws.getCell('A2').font = font({ bold: true, size: 12, color: { argb: DARK_BLUE } });
   ws.getCell('A2').alignment = { horizontal: 'center' };
   ws.mergeCells(3, 1, 3, lastCol);
-  ws.getCell('A3').value = 'Enter amount and select mode (Bank/Cash) for each month. Mode defaults to Cash.';
+  ws.getCell('A3').value =
+    'Enter amount and select mode (Bank/Cash) for each month. Mode defaults to Cash. Blank = not recorded. 0 = payment not required (paid in advance, or paid some operating expenses for the society, etc.).';
   ws.getCell('A3').font = font({ size: 9, italic: true, color: { argb: SUBTEXT } });
   ws.getCell('A3').alignment = { horizontal: 'center' };
 
   header(ws.getCell('A5'), 'Flat');
   header(ws.getCell('A6'), '');
   ws.mergeCells('A5:A6');
-  header(ws.getCell('B5'), 'Owner');
+  header(ws.getCell('B5'), 'Resident');
   header(ws.getCell('B6'), '');
   ws.mergeCells('B5:B6');
 
-  MONTHS.forEach((month, index) => {
+  snapshot.months.forEach((month, index) => {
     const amountCol = 3 + index * 2;
     const modeCol = amountCol + 1;
     header(ws.getCell(5, amountCol), month);
@@ -365,12 +378,12 @@ function buildFormattedMaintenance(workbook: ExcelJS.Workbook, snapshot: LedgerS
   snapshot.maintenance.forEach((row, index) => {
     const excelRow = 7 + index;
     plain(ws.getCell(excelRow, 1), row.flatId, { align: 'center' });
-    plain(ws.getCell(excelRow, 2), row.owner);
-    MONTHS.forEach((month, monthIndex) => {
+    plain(ws.getCell(excelRow, 2), row.resident);
+    snapshot.months.forEach((month, monthIndex) => {
       const amountCol = 3 + monthIndex * 2;
       const modeCol = amountCol + 1;
       const cell = row.months[month];
-      dataCell(ws.getCell(excelRow, amountCol), cell.amount || null);
+      dataCell(ws.getCell(excelRow, amountCol), cell.amount ?? null);
       const mode = ws.getCell(excelRow, modeCol);
       mode.value = cell.mode;
       mode.font = font({ size: 10, color: { argb: BLUE_TEXT } });
@@ -399,7 +412,7 @@ function buildFormattedMaintenance(workbook: ExcelJS.Workbook, snapshot: LedgerS
   total(ws.getCell(totalRow, 1), 'Grand Total', 'General');
   header(ws.getCell(totalRow, 2), '', DARK_BLUE);
   ws.mergeCells(totalRow, 1, totalRow, 2);
-  MONTHS.forEach((month, monthIndex) => {
+  snapshot.months.forEach((month, monthIndex) => {
     const amountCol = 3 + monthIndex * 2;
     const modeCol = amountCol + 1;
     total(ws.getCell(totalRow, amountCol), snapshot.maintenanceTotals.months[month]);
@@ -416,7 +429,7 @@ function buildFormattedMaintenance(workbook: ExcelJS.Workbook, snapshot: LedgerS
 
   ws.getColumn(1).width = 7;
   ws.getColumn(2).width = 22;
-  MONTHS.forEach((_, index) => {
+  snapshot.months.forEach((_, index) => {
     ws.getColumn(3 + index * 2).width = 12;
     ws.getColumn(4 + index * 2).width = 8;
   });
@@ -427,27 +440,27 @@ function buildFormattedMaintenance(workbook: ExcelJS.Workbook, snapshot: LedgerS
 }
 
 function buildFormattedPuja(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) {
-  const ws = workbook.addWorksheet('Puja Subscription');
+  const ws = workbook.addWorksheet('Puja Contribution');
   ws.mergeCells('A1:C1');
-  title(ws.getCell('A1'), `Debaloy — Puja Subscription ${FY_LABEL}`, PUJA_COL, 12);
+  title(ws.getCell('A1'), `Debaloy — Puja Contribution ${snapshot.year.label}`, PUJA_COL, 12);
   ws.getRow(1).height = 22;
   ws.mergeCells('A2:C2');
   ws.getCell('A2').value = 'Cash only — one payment per flat. Total feeds this year’s account.';
   ws.getCell('A2').font = font({ size: 9, italic: true, color: { argb: SUBTEXT } });
   ws.getCell('A2').alignment = { horizontal: 'center', wrapText: true };
   ws.mergeCells('A3:C3');
-  ws.getCell('A3').value = 'FY 2026-27  |  Sept 2026 – Aug 2027  |  Cash Only';
+  ws.getCell('A3').value = `${snapshot.year.label}  |  Cash Only`;
   ws.getCell('A3').font = font({ bold: true, size: 10, color: { argb: PUJA_COL } });
   ws.getCell('A3').alignment = { horizontal: 'center' };
 
-  ['Flat', 'Owner', 'Amount (Rs.)'].forEach((label, index) => {
+  ['Flat', 'Resident', 'Amount (Rs.)'].forEach((label, index) => {
     header(ws.getCell(5, index + 1), label, PUJA_COL);
   });
 
   snapshot.puja.forEach((row, index) => {
     const excelRow = 6 + index;
     plain(ws.getCell(excelRow, 1), row.flatId, { align: 'center' });
-    plain(ws.getCell(excelRow, 2), row.owner);
+    plain(ws.getCell(excelRow, 2), row.resident);
     dataCell(ws.getCell(excelRow, 3), row.amount || null, PUJA_CREAM);
   });
 
@@ -474,7 +487,7 @@ function buildFormattedLog(
   kind: 'income' | 'expense',
 ) {
   const isIncome = kind === 'income';
-  const ws = workbook.addWorksheet(isIncome ? 'Income' : 'Expenses');
+  const ws = workbook.addWorksheet(isIncome ? 'Other Collections' : 'Expenses');
   const accent = isIncome ? INC_GREEN : EXP_RED;
   const summaryFill = isIncome ? INC_SUMM : EXP_SUMM;
   const entries = snapshot.entries.filter((entry) => entry.kind === kind);
@@ -484,7 +497,7 @@ function buildFormattedLog(
   ws.mergeCells('A1:I1');
   title(
     ws.getCell('A1'),
-    `${ASSOCIATION} — ${isIncome ? 'Income' : 'Expense'} Tracker`,
+    `${ASSOCIATION} — ${isIncome ? 'Other Collections' : 'Expense'} Tracker`,
     accent,
     12,
   );
@@ -497,7 +510,7 @@ function buildFormattedLog(
   ws.getCell('A2').alignment = { horizontal: 'center', wrapText: true };
   ws.getRow(2).height = 24;
 
-  ['Date', isIncome ? 'Income Type' : 'Expense Type', 'Description', 'Mode', 'Amount (Rs.)'].forEach(
+  ['Date', isIncome ? 'Collection Type' : 'Expense Type', 'Description', 'Mode', 'Amount (Rs.)'].forEach(
     (label, index) => {
       header(ws.getCell(4, index + 1), label, accent);
     },
@@ -547,7 +560,7 @@ function buildFormattedLog(
   });
 
   const grandRow = 5 + totals.length;
-  header(ws.getCell(grandRow, 7), isIncome ? 'TOTAL INCOME' : 'TOTAL EXPENSES', accent, 10, 'right');
+  header(ws.getCell(grandRow, 7), isIncome ? 'TOTAL COLLECTIONS' : 'TOTAL EXPENSES', accent, 10, 'right');
   header(ws.getCell(grandRow, 8), '', accent);
   ws.mergeCells(grandRow, 7, grandRow, 8);
   total(ws.getCell(grandRow, 9), grand);
@@ -565,8 +578,54 @@ function buildFormattedLog(
   ws.views = [{ state: 'frozen', ySplit: 4 }];
 }
 
+function buildFormattedWithdrawals(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) {
+  const ws = workbook.addWorksheet('Withdrawals');
+  ws.mergeCells('A1:C1');
+  title(ws.getCell('A1'), `${ASSOCIATION} — Withdrawals Tracker`, WITH_TEAL, 12);
+  ws.getRow(1).height = 20;
+  ws.mergeCells('A2:C2');
+  ws.getCell('A2').value =
+    'Cash taken out of the bank. Increases cash in hand and decreases cash in bank by the same amount. Not a This Year line.';
+  ws.getCell('A2').font = font({ size: 9, italic: true, color: { argb: SUBTEXT } });
+  ws.getCell('A2').alignment = { horizontal: 'center', wrapText: true };
+  ws.getRow(2).height = 24;
+
+  ['Date', 'Amount (Rs.)', 'Note'].forEach((label, index) => {
+    header(ws.getCell(4, index + 1), label, WITH_TEAL);
+  });
+
+  const logRows = Math.max(snapshot.withdrawals.length, 8);
+  for (let i = 0; i < logRows; i += 1) {
+    const excelRow = 5 + i;
+    const row = snapshot.withdrawals[i];
+    const dateCell = ws.getCell(excelRow, 1);
+    dateCell.value = row?.date ?? null;
+    dateCell.numFmt = 'DD-MMM-YYYY';
+    dateCell.font = font({ color: { argb: BLUE_TEXT } });
+    dateCell.fill = fill(CREAM);
+    dateCell.border = box;
+    dataCell(ws.getCell(excelRow, 2), row ? row.amount : null);
+    const note = ws.getCell(excelRow, 3);
+    note.value = row?.note ?? '';
+    note.font = font({ color: { argb: BLUE_TEXT } });
+    note.fill = fill(CREAM);
+    note.border = box;
+  }
+
+  const totalRow = 5 + logRows;
+  header(ws.getCell(totalRow, 1), 'Total withdrawn', WITH_TEAL, 10, 'right');
+  total(ws.getCell(totalRow, 2), snapshot.withdrawalsTotal);
+  ws.getCell(totalRow, 2).alignment = { horizontal: 'right', vertical: 'middle' };
+  header(ws.getCell(totalRow, 3), '', WITH_TEAL);
+
+  ws.getColumn(1).width = 13;
+  ws.getColumn(2).width = 16;
+  ws.getColumn(3).width = 42;
+  ws.views = [{ state: 'frozen', ySplit: 4 }];
+}
+
 function buildFormattedThisYear(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) {
-  const ws = workbook.addWorksheet('This Year 2026-27');
+  const ws = workbook.addWorksheet(snapshot.year.label);
   const report = buildReceiptsPayments(snapshot);
   ws.mergeCells('A1:D1');
   title(ws.getCell('A1'), ASSOCIATION);
@@ -576,11 +635,13 @@ function buildFormattedThisYear(workbook: ExcelJS.Workbook, snapshot: LedgerSnap
   ws.getCell('A2').font = font({ size: 10, color: { argb: SUBTEXT } });
   ws.getCell('A2').alignment = { horizontal: 'center' };
   ws.mergeCells('A3:D3');
-  ws.getCell('A3').value = 'Receipts & Payments Account — Financial Year 2026-2027 (September 2026 to August 2027)';
+  ws.getCell('A3').value = `Receipts & Payments Account — ${snapshot.year.label}`;
   ws.getCell('A3').font = font({ bold: true, color: { argb: DARK_BLUE } });
   ws.getCell('A3').alignment = { horizontal: 'center' };
   ws.mergeCells('A4:D4');
-  ws.getCell('A4').value = 'Current-year statement. Totals update as new data is added. Same form as the handover.';
+  ws.getCell('A4').value = snapshot.year.endDate
+    ? `Frozen snapshot · closed ${snapshot.year.endDate}.`
+    : 'Current-year statement. Totals update as new data is added. Same form as the handover.';
   ws.getCell('A4').font = font({ size: 9, italic: true, color: { argb: RED_TEXT } });
   ws.getCell('A4').alignment = { horizontal: 'center' };
 
@@ -649,12 +710,12 @@ function buildFormattedThisYear(workbook: ExcelJS.Workbook, snapshot: LedgerSnap
   ws.getRow(totalRow).height = 20;
 
   const closeRow = totalRow + 2;
-  ws.getCell(closeRow, 1).value = 'Closing Bank Balance to FY 2027-28:';
+  ws.getCell(closeRow, 1).value = 'Closing Bank Balance to next year:';
   ws.getCell(closeRow, 1).font = font({ bold: true, color: { argb: DARK_BLUE } });
   ws.getCell(closeRow, 2).value = snapshot.cashInBank;
   ws.getCell(closeRow, 2).font = font({ bold: true, color: { argb: DARK_BLUE } });
   ws.getCell(closeRow, 2).numFmt = INR;
-  ws.getCell(closeRow + 1, 1).value = 'Closing Cash Balance to FY 2027-28:';
+  ws.getCell(closeRow + 1, 1).value = 'Closing Cash Balance to next year:';
   ws.getCell(closeRow + 1, 1).font = font({ bold: true, color: { argb: DARK_BLUE } });
   ws.getCell(closeRow + 1, 2).value = snapshot.cashInHand;
   ws.getCell(closeRow + 1, 2).font = font({ bold: true, color: { argb: DARK_BLUE } });
@@ -672,12 +733,13 @@ function buildFormattedThisYear(workbook: ExcelJS.Workbook, snapshot: LedgerSnap
   ws.getColumn(4).width = 16;
 }
 
-export function exportFilename(kind: ExportKind) {
-  return kind === 'raw' ? 'Debaloy_2026-27-raw.xlsx' : 'Debaloy_2026-27.xlsx';
+export function exportFilename(kind: ExportKind, label = 'ledger') {
+  const slug = label.replace(/[^\w.-]+/g, '-');
+  return kind === 'raw' ? `Debaloy_${slug}-raw.xlsx` : `Debaloy_${slug}.xlsx`;
 }
 
-export async function buildWorkbookBuffer(kind: ExportKind = 'formatted'): Promise<Uint8Array> {
-  const snapshot = await loadLedger();
+export async function buildWorkbookBuffer(kind: ExportKind = 'formatted', year?: LedgerYear): Promise<Uint8Array> {
+  const snapshot = await loadLedger(year);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = ASSOCIATION;
   workbook.created = new Date();
@@ -689,6 +751,7 @@ export async function buildWorkbookBuffer(kind: ExportKind = 'formatted'): Promi
     buildFormattedPuja(workbook, snapshot);
     buildFormattedLog(workbook, snapshot, 'income');
     buildFormattedLog(workbook, snapshot, 'expense');
+    buildFormattedWithdrawals(workbook, snapshot);
     buildFormattedThisYear(workbook, snapshot);
   }
   const buffer = await workbook.xlsx.writeBuffer();

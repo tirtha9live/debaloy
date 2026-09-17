@@ -3,11 +3,12 @@ import Layout from '../../layouts/Layout.astro';
 import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
+import ReceiptsPaymentsSheet from '../../components/ReceiptsPaymentsSheet.astro';
 import { ADDRESS, ASSOCIATION } from '../../lib/constants';
-import { formatAmount } from '../../lib/format';
+import { displayDate } from '../../lib/format';
 import { buildReceiptsPayments, loadLedger } from '../../lib/ledger';
 
-const snapshot = await loadLedger();
+const snapshot = await loadLedger(Astro.locals.ledgerYear);
 const report = buildReceiptsPayments(snapshot);
 const canEdit = Astro.locals.canEdit;
 ---
@@ -18,76 +19,43 @@ const canEdit = Astro.locals.canEdit;
     <LedgerHeader
       sheet="receipts"
       title="This year’s account."
-      subtitle="The FY 2026-27 receipts & payments statement, in the same form as the handover. Totals update as Maintenance, Puja, Income, and Expenses are added. Download Excel or image for the current statement."
+      subtitle={canEdit
+        ? `The ${snapshot.year.label} receipts & payments statement, in the same form as the original takeover record. Totals update as Maintenance, Puja Contribution, Other Collections, and Expenses are added. Download Excel for the current statement.`
+        : `The ${snapshot.year.label} receipts & payments statement. 0 on Maintenance means payment not required.`}
       canEdit={canEdit}
     />
 
     <form id="receipts-form" method="post" action="/api/ledger/settings" data-ledger-form class="mt-6 sm:mt-8">
-      <p class="sheet-swipe-hint">Swipe sideways to see receipts and payments together.</p>
+      <button type="submit" class="sr-only" tabindex="-1" aria-hidden="true">Save sheet</button>
       <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
         <div class="border-b border-hairline px-4 py-5 text-center dark:border-slate-800 sm:px-6">
-          <p class="text-lg font-semibold tracking-tight" translate="no">{ASSOCIATION}</p>
-          <p class="mt-1 text-sm text-body dark:text-slate-300">{ADDRESS}</p>
-          <p class="mt-2 text-sm font-medium">Receipts & Payments Account — Financial Year 2026-2027 (September 2026 to August 2027)</p>
-          <p class="mt-2 font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Live statement · updates with new data</p>
+          <p class="text-lg font-semibold tracking-tight text-pretty" translate="no">{ASSOCIATION}</p>
+          <p class="mt-1 text-sm text-pretty text-body dark:text-slate-300">{ADDRESS}</p>
+          <p class="mt-2 text-sm font-medium text-pretty">Receipts & Payments Account — {snapshot.year.label} ({displayDate(snapshot.year.startDate)}{snapshot.year.endDate ? ` to ${displayDate(snapshot.year.endDate)}` : ' · open'})</p>
+          <p class="mt-2 font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">{snapshot.year.endDate ? 'Frozen snapshot' : 'Live statement · updates with new data'}</p>
         </div>
-        <div class="sheet-scroll">
-          <table class="sheet-table w-full">
-            <thead>
-              <tr>
-                <th class="sheet-sticky min-w-40 text-left sm:min-w-56">Receipts</th>
-                <th class="text-right">Amount (Rs.)</th>
-                <th class="text-left">Payments</th>
-                <th class="text-right">Amount (Rs.)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.lines.map((line) => (
-                <tr>
-                  <td class:list={['sheet-sticky min-w-40 sm:min-w-56', line.receiptSection && 'bg-canvas-soft font-medium dark:bg-slate-800']}>{line.receiptLabel}</td>
-                  <td class:list={['text-right tabular-nums', line.receiptSection && 'bg-canvas-soft dark:bg-slate-800']}>
-                    {line.receiptAmount === null ? '' : formatAmount(line.receiptAmount)}
-                  </td>
-                  <td class:list={[line.paymentSection && 'bg-canvas-soft font-medium dark:bg-slate-800']}>{line.paymentLabel}</td>
-                  <td class:list={['text-right tabular-nums', line.paymentSection && 'bg-canvas-soft dark:bg-slate-800']}>
-                    {line.paymentEditable && canEdit ? (
-                      <input
-                        class="sheet-input text-right"
-                        type="text"
-                        inputmode="decimal"
-                        name={line.paymentLabel.includes('Hand') ? 'cash_in_hand' : 'cash_in_bank'}
-                        value={String(line.paymentAmount ?? 0)}
-                        data-change-label={line.paymentLabel.trim()}
-                        aria-label={line.paymentLabel.trim()}
-                        autocomplete="off"
-                      />
-                    ) : (
-                      line.paymentAmount === null ? '' : formatAmount(line.paymentAmount)
-                    )}
-                  </td>
-                </tr>
-              ))}
-              <tr class="bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950">
-                <td class="sheet-sticky bg-primary font-medium dark:bg-slate-100">Total</td>
-                <td class="text-right font-medium tabular-nums">{formatAmount(report.receiptTotal)}</td>
-                <td class="font-medium">Total</td>
-                <td class="text-right font-medium tabular-nums">{formatAmount(report.paymentTotal)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="border-t border-hairline px-4 py-4 text-sm text-body dark:border-slate-800 dark:text-slate-300 sm:px-6">
-          Closing cash in hand and bank become the opening balances of the next handover.
-        </div>
-        <div data-export-only class="hidden border-t border-hairline px-6 py-5 text-xs text-mute dark:border-slate-800">
-          <div class="mb-4 grid gap-2 sm:grid-cols-2">
-            <p>Closing bank balance to FY 2027-28: <span class="font-medium tabular-nums text-ink dark:text-slate-100">{formatAmount(snapshot.cashInBank)}</span></p>
-            <p>Closing cash balance to FY 2027-28: <span class="font-medium tabular-nums text-ink dark:text-slate-100">{formatAmount(snapshot.cashInHand)}</span></p>
-          </div>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <p>Signed by: Signature of President</p>
-            <p>Signed by: Signature of Secretary & Treasurer</p>
-          </div>
+        <ReceiptsPaymentsSheet
+          lines={report.lines}
+          receiptTotal={report.receiptTotal}
+          paymentTotal={report.paymentTotal}
+          canEdit={canEdit}
+          closing={{
+            cash_in_hand: {
+              computed: snapshot.computedCashInHand,
+              overridden: snapshot.cashInHandOverride,
+              refetch: 'refetch_cash_in_hand',
+              label: 'Cash in Hand',
+            },
+            cash_in_bank: {
+              computed: snapshot.computedCashInBank,
+              overridden: snapshot.cashInBankOverride,
+              refetch: 'refetch_cash_in_bank',
+              label: 'Cash in Bank',
+            },
+          }}
+        />
+        <div class="border-t border-hairline px-4 py-4 text-sm leading-6 text-pretty text-body dark:border-slate-800 dark:text-slate-300 sm:px-6">
+          Closing cash in hand and bank follow opening balances plus receipts minus expenses, split by Cash and Bank. Bank-to-cash withdrawals move money between the two closing figures and do not appear as a line here. Edit a figure to override; the circular fetch icon restores the amount from records. These become the opening balances of the next year.
         </div>
       </section>
     </form>

@@ -1,11 +1,8 @@
-import { toPng } from 'html-to-image';
 import { displayDate, formatAmount, parseAmount } from '../lib/format';
 
 const toggle = document.getElementById('download-toggle') as HTMLButtonElement | null;
 const panel = document.getElementById('download-panel');
-const imageButton = document.getElementById('download-img') as HTMLButtonElement | null;
 const status = document.getElementById('download-status');
-const capture = document.getElementById('sheet-capture');
 const excelLinks = [...document.querySelectorAll<HTMLAnchorElement>('[data-excel]')];
 const backupLinks = [...document.querySelectorAll<HTMLAnchorElement>('[data-backup]')];
 const importButton = document.getElementById('json-import') as HTMLButtonElement | null;
@@ -36,7 +33,6 @@ function setBusy(busy: boolean, busyLabel = 'Downloading…') {
     link.setAttribute('aria-disabled', String(busy));
     link.classList.toggle('pointer-events-none', busy);
   });
-  if (imageButton) imageButton.disabled = busy;
   if (importButton) importButton.disabled = busy;
 }
 
@@ -196,33 +192,6 @@ document.addEventListener('keydown', (event) => {
   if (importFile) importFile.value = '';
 });
 
-imageButton?.addEventListener('click', async () => {
-  if (!capture || imageButton.disabled) return;
-  const sheet = imageButton.dataset.sheet || 'ledger';
-  const exportOnly = [...capture.querySelectorAll<HTMLElement>('[data-export-only]')];
-  setMenuOpen(false);
-  setBusy(true);
-  if (status) status.textContent = 'Preparing image…';
-  exportOnly.forEach((el) => el.classList.remove('hidden'));
-  try {
-    const dark = document.documentElement.classList.contains('dark');
-    const dataUrl = await toPng(capture, {
-      pixelRatio: 2,
-      backgroundColor: dark ? '#020617' : '#fafafa',
-      cacheBust: true,
-    });
-    const res = await fetch(dataUrl);
-    triggerFile(await res.blob(), `debaloy-${sheet}.png`);
-    void fetch('/api/activity/download', { method: 'POST', credentials: 'same-origin' });
-    if (status) status.textContent = 'Image downloaded.';
-  } catch {
-    if (status) status.textContent = 'Could not create the image. Try Excel formatted instead.';
-  } finally {
-    exportOnly.forEach((el) => el.classList.add('hidden'));
-    setBusy(false);
-  }
-});
-
 type LedgerField = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 
 type ChangeRow = {
@@ -268,13 +237,20 @@ function displayValue(field: LedgerField, value: string) {
     return displayDate(value || null);
   }
   if (isMoneyField(field)) {
-    return formatAmount(parseAmount(value)) || '0.00';
+    if (!value.trim()) return '—';
+    return formatAmount(parseAmount(value));
   }
   const text = value.trim();
   return text || '—';
 }
 
 function valuesMatch(field: LedgerField, previous: string, next: string) {
+  if (field.name.startsWith('amount:')) {
+    const prevEmpty = !previous.trim();
+    const nextEmpty = !next.trim();
+    if (prevEmpty || nextEmpty) return prevEmpty && nextEmpty;
+    return parseAmount(previous) === parseAmount(next);
+  }
   if (isMoneyField(field)) return parseAmount(previous) === parseAmount(next);
   if (field instanceof HTMLInputElement && field.type === 'date') return (previous || '') === (next || '');
   return previous.trim() === next.trim();
@@ -397,6 +373,9 @@ ledgerForms.forEach((form) => {
   form.addEventListener('submit', (event) => {
     if (form.dataset.confirmed === '1') {
       delete form.dataset.confirmed;
+      form.querySelectorAll<HTMLInputElement>('input[name="intent"][type="hidden"]').forEach((field) => {
+        field.disabled = false;
+      });
       dirty = false;
       return;
     }
@@ -408,21 +387,59 @@ ledgerForms.forEach((form) => {
     const intent = intentOf(form, submitter);
     const go = () => {
       form.dataset.confirmed = '1';
+      const hiddenIntent = form.querySelector<HTMLInputElement>('input[name="intent"][type="hidden"]');
+      const submitterSetsIntent =
+        (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) &&
+        submitter.name === 'intent';
+      if (submitterSetsIntent && hiddenIntent) hiddenIntent.disabled = true;
       form.requestSubmit(submitter ?? undefined);
     };
 
     if (intent === 'delete') {
+      const auditRows = collectChanges(form, true).map((row) => ({
+        label: row.label,
+        from: row.to,
+        to: 'removed',
+      }));
       openConfirm({
         title: 'Delete this row?',
         copy: 'This removes the entry from the ledger.',
-        rows: collectChanges(form, true).map((row) => ({
-          label: row.label,
-          from: row.to,
-          to: 'removed',
-        })),
+        rows: auditRows,
         confirmLabel: 'Confirm delete',
         danger: true,
-        onConfirm: go,
+        onConfirm: () => go(),
+      });
+      return;
+    }
+
+    if (intent === 'refetch_cash_in_hand' || intent === 'refetch_cash_in_bank') {
+      const fieldName = intent === 'refetch_cash_in_hand' ? 'cash_in_hand' : 'cash_in_bank';
+      const field = form.querySelector<LedgerField>(`[name="${fieldName}"]`);
+      if (!field) return;
+      const computed = field.dataset.computed ?? '';
+      if (valuesMatch(field, field.value, computed) && field.dataset.fromRecords === '1') {
+        openConfirm({
+          title: 'Already from records',
+          copy: 'This closing balance already matches opening balances plus receipts minus expenses, including bank-to-cash withdrawals.',
+          rows: [],
+          confirmLabel: 'OK',
+          onConfirm: () => undefined,
+        });
+        return;
+      }
+      const auditRows = [
+        {
+          label: fieldLabel(field),
+          from: displayValue(field, field.value),
+          to: displayValue(field, computed),
+        },
+      ];
+      openConfirm({
+        title: 'Reset from records?',
+        copy: 'This clears any override and fetches the amount from opening balances, receipts, expenses, and bank-to-cash withdrawals.',
+        rows: auditRows,
+        confirmLabel: 'Confirm refetch',
+        onConfirm: () => go(),
       });
       return;
     }
@@ -434,7 +451,7 @@ ledgerForms.forEach((form) => {
         copy: 'Check the amount. An extra zero is saved as a much larger figure.',
         rows,
         confirmLabel: 'Confirm add',
-        onConfirm: go,
+        onConfirm: () => go(),
       });
       return;
     }
@@ -455,12 +472,55 @@ ledgerForms.forEach((form) => {
       copy: 'Nothing is saved until you confirm. Watch for an extra zero.',
       rows,
       confirmLabel: 'Confirm save',
-      onConfirm: go,
+      onConfirm: () => go(),
     });
   });
 });
+
+(() => {
+  const dwellPath = () => location.pathname + location.search;
+  let dwellStart = Date.now();
+  let lastPath = dwellPath();
+
+  function sendDwell() {
+    const path = lastPath;
+    const sec = Math.round((Date.now() - dwellStart) / 1000);
+    if (sec < 2 || !path.startsWith('/ledger')) return;
+    const body = JSON.stringify({ path, duration_sec: sec });
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/activity/dwell', new Blob([body], { type: 'application/json' }));
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      sendDwell();
+      return;
+    }
+    dwellStart = Date.now();
+    lastPath = dwellPath();
+  });
+  window.addEventListener('pagehide', sendDwell);
+})();
 window.addEventListener('beforeunload', (event) => {
   if (!dirty) return;
   event.preventDefault();
   event.returnValue = '';
 });
+
+function syncRpInputs() {
+  const wide = window.matchMedia('(min-width: 1024px)').matches;
+  document.querySelectorAll<HTMLElement>('[data-rp-inputs]').forEach((root) => {
+    const disable = root.dataset.rpInputs === 'stack' ? wide : !wide;
+    root
+      .querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>(
+        'input, select, textarea, button[name="intent"]',
+      )
+      .forEach((field) => {
+        field.disabled = disable;
+      });
+  });
+}
+
+syncRpInputs();
+window.matchMedia('(min-width: 1024px)').addEventListener('change', syncRpInputs);

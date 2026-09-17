@@ -26,15 +26,16 @@ This file persists product, UI, and implementation decisions for **Debaloy** acr
 ## Architecture preference
 
 - Prefer **MPA pages** over SPA routing for SEO and shareable sheet URLs.
-- Sheets are separate routes: `/ledger`, `/ledger/handover`, `/ledger/maintenance`, `/ledger/puja`, `/ledger/income`, `/ledger/expenses`, `/ledger/receipts`.
+- Sheets are separate routes: `/ledger`, `/ledger/handover`, `/ledger/maintenance`, `/ledger/puja`, `/ledger/income`, `/ledger/expenses`, `/ledger/withdrawals`, `/ledger/receipts`, `/ledger/years`.
 - Client JS is enhancement only (theme, download menu with spinner, dirty-form warning, save confirmation). Saves use form POST.
-- Treasurer Save sheet (and income/expense Save, Add row, Add type) first lists every value that would change, such as `0.00 → 5,000.00`. Nothing is written until Confirm save. Review again cancels.
-- Download is one control. Click opens **Excel formatted** (workbook colours and layout from `temp/build_workbook.py`), **Excel raw** (values only), and **Image** (PNG of the current sheet). Treasurer also gets **JSON export** (dated D1 dump) and **JSON import**. Import can **Merge** (upsert, keep extra rows) or **Overwrite** (clear the live tables, then restore the file). Residents and View as resident do not see JSON options. Excel/JSON export links still work if JS is off (`/api/export?kind=formatted|raw|json`).
-- Layout is phone-first. Residents and the treasurer should be able to view and update on a mobile browser: stacked sheet menu, 44px inputs, sticky Save on edit sheets, sideways swipe for wide grids.
-- Handover is the original takeover record (FY 2024-26). Read-only for everyone. Kept for later reference.
-- This year’s account (`/ledger/receipts`) is the live FY 2026-27 receipts & payments statement in the same form as handover. It updates as Maintenance, Puja, Income, and Expenses are added, and is what residents/admins download. Closing cash in hand / bank are the only R&P fields editable by admin.
-- Income and expense trackers start with the built-in types only. The treasurer can add named types from the category summary; those types then appear in the log dropdown and on This Year. Blank spare slots are not shown.
-- Excel workbook always includes a frozen **Handover** sheet plus a live **This Year 2026-27** sheet. Formatted Excel follows the Python builder’s palette (dark-blue headers, cream amount cells, section fills). Image download of This Year also includes carry-forward closing balances and signature lines.
+- Treasurer Save sheet (and income/expense/withdrawal Save, Add row, Add type) first lists every value that would change, such as `0.00 → 5,000.00`. Nothing is written until Confirm save. Review again cancels.
+- Download is one control. Click opens **Excel formatted** and **Excel raw**. Treasurer also gets **JSON export** and **JSON import**. Import can **Merge** or **Overwrite**. Residents and View as resident do not see JSON options. Excel/JSON export links still work if JS is off (`/api/export?kind=formatted|raw|json`).
+- Layout is phone-first. Residents and the treasurer should be able to view and update on a mobile browser: stacked sheet menu, 44px inputs, sticky Save on edit sheets, sideways swipe for Maintenance. This Year and Handover stack receipts then payments on phones so labels wrap. On Maintenance, a blank cell is not recorded (empty in Excel). Entering **0** means payment not required and exports as 0.
+- Handover is the original takeover record (FY 2024-26). The **Archive** tab (`/ledger/handover`) holds that takeover record plus closed years as frozen snapshots. Read-only for everyone except freeze-date changes by the treasurer.
+- This year’s account (`/ledger/receipts`) is the live year receipts & payments statement in the same form as handover. The treasurer closes books on the annual meeting date (typically August–October, before Durga Puja) from **Years**. That year freezes as a read-only snapshot in **Archive**. The next year starts the following day with closing cash/bank carried forward. Changing a freeze date later re-splits dated income, expenses, and withdrawals, and maintenance months (by the 1st of the month), then recalculates the next year’s opening. Puja Contribution stays with the year it was recorded on. Withdrawals are not a This Year line. Closing cash in hand / bank are computed from that year’s opening plus Cash/Bank receipts minus Cash/Bank expenses, then withdrawals add to cash in hand and subtract from cash in bank (total unchanged). The treasurer can override a figure; the circular fetch icon clears that override and restores the amount from records.
+- Withdrawals (`/ledger/withdrawals`) track bank-to-cash moves: date, amount (>0), optional note. Cash expenses already reduce cash in hand. Amount 0 is not saved.
+- Other Collections and expense trackers start with the built-in types only. The treasurer can add named types from the category summary; those types then appear in the log dropdown and on This Year. Blank spare slots are not shown.
+- Excel workbook always includes a frozen **Handover** sheet plus a receipts & payments sheet named for the selected year. Formatted Excel follows the Python builder’s palette (dark-blue headers, cream amount cells, section fills). Signature lines and carry-forward closing balances are in the Excel download only, not on the web This Year view.
 
 ## Tech stack
 
@@ -42,8 +43,8 @@ This file persists product, UI, and implementation decisions for **Debaloy** acr
 - Access env via `import { env } from 'cloudflare:workers'` (Astro 6; no `Astro.locals.runtime`).
 - **Tailwind CSS v4**, CSS-first via `@tailwindcss/vite`. Tokens in `src/styles/global.css` (`@theme`). No `tailwind.config.*`, no CDN.
 - Design follows [`DESIGN.md`](../DESIGN.md): Vercel-inspired ink/canvas, hairline borders, stacked shadows, mesh gradient at hero/login only, Inter + JetBrains Mono.
-- D1 `debaloy-ledger` stores ledger rows. KV `debaloy-session` stores sessions.
-- Excel download is generated server-side with `exceljs` (excluded from Vite’s dep optimizer; bundled for the Worker). Formatted matches `temp/build_workbook.py`; raw is an unstyled values workbook. Image download is client-side PNG of `#sheet-capture` via `html-to-image`.
+- D1 `debaloy-ledger` stores ledger rows. KV `debaloy-session` stores sessions. JSON backup includes `withdrawals`; an older backup without that key restores as an empty list.
+- Excel download is generated server-side with `exceljs` (excluded from Vite’s dep optimizer; bundled for the Worker). Formatted matches `temp/build_workbook.py`; raw is an unstyled values workbook.
 
 ## Theme preference
 

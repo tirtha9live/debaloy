@@ -3,13 +3,12 @@ import Layout from '../../layouts/Layout.astro';
 import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
-import { ASSOCIATION, FY_LABEL, SHEETS } from '../../lib/constants';
-import { withView } from '../../lib/auth';
+import { ASSOCIATION, SHEETS } from '../../lib/constants';
+import { withLedger, withView } from '../../lib/auth';
 import { formatInr } from '../../lib/format';
-import { buildReceiptsPayments, loadLedger } from '../../lib/ledger';
+import { loadLedger } from '../../lib/ledger';
 
-const snapshot = await loadLedger();
-const report = buildReceiptsPayments(snapshot);
+const snapshot = await loadLedger(Astro.locals.ledgerYear);
 const viewAsResident = Astro.locals.viewAsResident;
 ---
 
@@ -19,7 +18,7 @@ const viewAsResident = Astro.locals.viewAsResident;
     <LedgerHeader
       sheet="overview"
       title="Building ledger."
-      subtitle={`${ASSOCIATION} · ${FY_LABEL}. Handover is the original takeover record. This year’s account updates as you add collections and expenses, and can be downloaded in the same form.`}
+      subtitle={`${ASSOCIATION} · ${snapshot.year.label}. Archive holds the original takeover record and closed years. This year’s account updates as you add collections and expenses. Withdrawals move cash from bank to hand and do not appear as a This Year line.`}
     />
 
     <div id="sheet-capture" class="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -29,26 +28,26 @@ const viewAsResident = Astro.locals.viewAsResident;
         <p class="mt-1 text-sm text-body dark:text-slate-300">Bank {formatInr(snapshot.maintenanceTotals.bank)} · Cash {formatInr(snapshot.maintenanceTotals.cash)}</p>
       </article>
       <article class="card-elevate rounded-xl bg-canvas p-6 dark:bg-slate-900">
-        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Puja</p>
+        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Puja Contribution</p>
         <p class="mt-3 text-2xl font-semibold tabular-nums tracking-tight">{formatInr(snapshot.pujaTotal)}</p>
-        <p class="mt-1 text-sm text-body dark:text-slate-300">Cash-only subscription</p>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">Cash-only contribution</p>
       </article>
       <article class="card-elevate rounded-xl bg-canvas p-6 dark:bg-slate-900">
-        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Receipts</p>
-        <p class="mt-3 text-2xl font-semibold tabular-nums tracking-tight">{formatInr(report.receiptTotal)}</p>
-        <p class="mt-1 text-sm text-body dark:text-slate-300">Including opening balances</p>
+        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Cash in hand</p>
+        <p class="mt-3 text-2xl font-semibold tabular-nums tracking-tight">{formatInr(snapshot.cashInHand)}</p>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">Current cash at hand</p>
       </article>
       <article class="card-elevate rounded-xl bg-canvas p-6 dark:bg-slate-900">
-        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Payments</p>
-        <p class="mt-3 text-2xl font-semibold tabular-nums tracking-tight">{formatInr(report.paymentTotal)}</p>
-        <p class="mt-1 text-sm text-body dark:text-slate-300">Including closing cash</p>
+        <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Cash in bank</p>
+        <p class="mt-3 text-2xl font-semibold tabular-nums tracking-tight">{formatInr(snapshot.cashInBank)}</p>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">Current cash in bank</p>
       </article>
     </div>
 
     <div class="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {SHEETS.map((sheet) => (
         <a
-          href={withView(sheet.href, viewAsResident)}
+          href={sheet.slug === 'handover' || sheet.slug === 'years' ? withView(sheet.href, viewAsResident) : withLedger(sheet.href, Astro.locals)}
           class="card-elevate min-h-24 rounded-xl bg-canvas p-5 transition-colors duration-200 hover:bg-canvas-soft dark:bg-slate-900 dark:hover:bg-slate-800"
         >
           <h2 class="text-lg font-semibold tracking-tight">{sheet.label}</h2>

@@ -23,5 +23,9 @@ migrations_dir = "migrations"
 directory = "./dist"
 binding = "ASSETS"
 
+[vars]
+# Set to "true" during deploys or debugging — maintenance notice on landing + top banner.
+DEBUG = "false"
+
 [observability]
 enabled = true

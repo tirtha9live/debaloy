@@ -14,6 +14,9 @@ declare namespace App {
     session: Session | null;
     viewAsResident: boolean;
     canEdit: boolean;
+    maintenanceMode: boolean;
+    ledgerYear?: import('./lib/years').LedgerYear;
+    ledgerYears?: import('./lib/years').LedgerYear[];
   }
 }
 

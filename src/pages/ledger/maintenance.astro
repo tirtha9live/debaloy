@@ -3,11 +3,13 @@ import Layout from '../../layouts/Layout.astro';
 import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
-import { ASSOCIATION, MONTHS } from '../../lib/constants';
+import { ASSOCIATION } from '../../lib/constants';
 import { formatAmount } from '../../lib/format';
 import { loadLedger } from '../../lib/ledger';
+import { isMaintenancePaymentPending } from '../../lib/sheet';
 
-const snapshot = await loadLedger();
+const snapshot = await loadLedger(Astro.locals.ledgerYear);
+const months = snapshot.months;
 const canEdit = Astro.locals.canEdit;
 ---
 
@@ -17,20 +19,33 @@ const canEdit = Astro.locals.canEdit;
     <LedgerHeader
       sheet="maintenance"
       title="Maintenance tracker."
-      subtitle="Enter amount and mode (Bank / Cash) for each month. Mode defaults to Cash. This year’s account updates from this sheet."
+      subtitle={canEdit
+        ? 'Enter amount and mode (Bank / Cash) for each month. Mode defaults to Cash. Leave a cell blank if it is not recorded. This year’s account updates from this sheet.'
+        : 'Monthly collections by flat. 0 means payment not required.'}
       canEdit={canEdit}
     />
 
     <form id="maintenance-form" method="post" action="/api/ledger/maintenance" data-ledger-form class="mt-6 sm:mt-8">
-      <p class="sheet-swipe-hint">Swipe sideways to see every month.</p>
+      <p class="sheet-swipe-hint">Swipe across for months. Scroll for every flat. Flat and resident stay on screen.</p>
+      <div class="mb-3 text-sm leading-6 text-body dark:text-slate-300">
+        {canEdit && (
+          <p><span class="font-medium text-ink dark:text-slate-100">Blank</span> means not recorded.</p>
+        )}
+        <p>
+          <span class="font-medium text-ink dark:text-slate-100">0</span> means payment not required — paid in advance, or some operating expenses were paid directly for the society, etc.
+        </p>
+        <p>
+          <span class="sheet-legend-pending font-medium text-ink dark:text-slate-100">Payment pending</span> — current month not yet recorded.
+        </p>
+      </div>
       <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
-        <div class="sheet-scroll">
+        <div class="sheet-scroll sheet-freeze">
           <table class="sheet-table">
             <thead>
               <tr>
                 <th rowspan="2" class="sheet-sticky sheet-sticky-flat">Flat</th>
-                <th rowspan="2" class="sheet-sticky sheet-sticky-owner">Owner</th>
-                {MONTHS.map((month) => (
+                <th rowspan="2" class="sheet-sticky sheet-sticky-resident">Resident</th>
+                {months.map((month) => (
                   <th colspan="2" class="text-center">{month}</th>
                 ))}
                 <th rowspan="2">Total Bank</th>
@@ -38,7 +53,7 @@ const canEdit = Astro.locals.canEdit;
                 <th rowspan="2">Total</th>
               </tr>
               <tr>
-                {MONTHS.map(() => (
+                {months.map(() => (
                   <>
                     <th>Amount (Rs.)</th>
                     <th>Mode</th>
@@ -50,32 +65,34 @@ const canEdit = Astro.locals.canEdit;
               {snapshot.maintenance.map((row) => (
                 <tr>
                   <td class="sheet-sticky sheet-sticky-flat font-medium">{row.flatId}</td>
-                  <td class="sheet-sticky sheet-sticky-owner">{row.owner}</td>
-                  {MONTHS.map((month) => (
+                  <td class="sheet-sticky sheet-sticky-resident">{row.resident}</td>
+                  {months.map((month) => {
+                    const pending = isMaintenancePaymentPending(month, row.months[month].amount, months);
+                    return (
                     <>
-                      <td>
+                      <td class:list={[{ 'sheet-cell-pending': pending }]}>
                         {canEdit ? (
                           <input
                             class="sheet-input"
                             type="text"
                             inputmode="decimal"
                             name={`amount:${row.flatId}:${month}`}
-                            value={row.months[month].amount ? String(row.months[month].amount) : ''}
-                            data-change-label={`${row.owner} · ${month}`}
-                            aria-label={`${row.owner} ${month} amount`}
+                            value={row.months[month].amount == null ? '' : String(row.months[month].amount)}
+                            data-change-label={`${row.resident} · ${month}`}
+                            aria-label={`${row.resident} ${month} amount`}
                             autocomplete="off"
                           />
                         ) : (
-                          <span class="tabular-nums">{row.months[month].amount ? formatAmount(row.months[month].amount) : ''}</span>
+                          <span class="tabular-nums">{row.months[month].amount == null ? '' : formatAmount(row.months[month].amount)}</span>
                         )}
                       </td>
-                      <td>
+                      <td class:list={[{ 'sheet-cell-pending': pending }]}>
                         {canEdit ? (
                           <select
-                            class="sheet-input min-w-20"
+                            class="sheet-input"
                             name={`mode:${row.flatId}:${month}`}
-                            data-change-label={`${row.owner} · ${month} · mode`}
-                            aria-label={`${row.owner} ${month} mode`}
+                            data-change-label={`${row.resident} · ${month} · mode`}
+                            aria-label={`${row.resident} ${month} mode`}
                           >
                             <option value="Cash" selected={row.months[month].mode === 'Cash'}>Cash</option>
                             <option value="Bank" selected={row.months[month].mode === 'Bank'}>Bank</option>
@@ -85,7 +102,7 @@ const canEdit = Astro.locals.canEdit;
                         )}
                       </td>
                     </>
-                  ))}
+                  );})}
                   <td class="text-right font-medium tabular-nums">{formatAmount(row.totalBank)}</td>
                   <td class="text-right font-medium tabular-nums">{formatAmount(row.totalCash)}</td>
                   <td class="text-right font-medium tabular-nums">{formatAmount(row.total)}</td>
@@ -93,7 +110,7 @@ const canEdit = Astro.locals.canEdit;
               ))}
               <tr class="bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950">
                 <td class="sheet-sticky sheet-sticky-flat bg-primary font-medium dark:bg-slate-100" colspan="2">Grand total</td>
-                {MONTHS.map((month) => (
+                {months.map((month) => (
                   <>
                     <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.months[month])}</td>
                     <td></td>

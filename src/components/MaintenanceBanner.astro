@@ -1,0 +1,26 @@
+---
+interface Props {
+  compact?: boolean;
+}
+
+const { compact = true } = Astro.props;
+---
+
+<div
+  class:list={[
+    'border-b border-amber-200/80 bg-amber-50 text-center text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/50 dark:text-amber-100',
+    compact ? 'px-4 py-2 text-xs leading-5 sm:text-sm' : 'px-4 py-4 text-sm leading-6 sm:text-base',
+  ]}
+  role="status"
+>
+  {
+    compact ? (
+      <p>Some features may be unavailable while we finish updates. If something fails, try again shortly.</p>
+    ) : (
+      <p>
+        <span class="font-medium">Site in maintenance mode.</span> Please check back after some time. You can still sign in
+        if you have the password, but some features may be unavailable.
+      </p>
+    )
+  }
+</div>

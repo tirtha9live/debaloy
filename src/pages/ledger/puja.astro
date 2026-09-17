@@ -6,38 +6,47 @@ import LedgerHeader from '../../components/LedgerHeader.astro';
 import { ASSOCIATION } from '../../lib/constants';
 import { formatAmount } from '../../lib/format';
 import { loadLedger } from '../../lib/ledger';
+import { isPujaPaymentPending } from '../../lib/sheet';
 
-const snapshot = await loadLedger();
+const snapshot = await loadLedger(Astro.locals.ledgerYear);
 const canEdit = Astro.locals.canEdit;
 ---
 
-<Layout title={`Puja subscription · ${ASSOCIATION}`} noindex>
+<Layout title={`Puja Contribution · ${ASSOCIATION}`} noindex>
   <Navigation current="puja" />
   <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
     <LedgerHeader
       sheet="puja"
-      title="Puja subscription."
-      subtitle="Cash only — one payment per flat. The total feeds this year’s account."
+      title="Puja contribution."
+      subtitle={canEdit
+        ? 'Cash only — one payment per flat. Leave blank until recorded.'
+        : 'Cash only — one payment per flat.'}
       canEdit={canEdit}
     />
 
     <form id="puja-form" method="post" action="/api/ledger/puja" data-ledger-form class="mt-6 sm:mt-8">
+      <p class="sheet-swipe-hint">Scroll for every flat. Flat and resident stay on screen.</p>
+      <p class="mb-3 text-sm leading-6 text-body dark:text-slate-300">
+        <span class="sheet-legend-pending font-medium text-ink dark:text-slate-100">Payment pending</span> — contribution not yet recorded for this flat.
+      </p>
       <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
-        <div class="sheet-scroll">
+        <div class="sheet-scroll sheet-freeze">
           <table class="sheet-table w-full max-w-3xl">
             <thead>
               <tr>
-                <th class="text-left">Flat</th>
-                <th class="text-left">Owner</th>
+                <th class="sheet-sticky sheet-sticky-flat text-left">Flat</th>
+                <th class="sheet-sticky sheet-sticky-resident text-left">Resident</th>
                 <th class="text-right">Amount (Rs.)</th>
               </tr>
             </thead>
             <tbody>
-              {snapshot.puja.map((row) => (
+              {snapshot.puja.map((row) => {
+                const pending = isPujaPaymentPending(row.amount);
+                return (
                 <tr>
-                  <td class="font-medium">{row.flatId}</td>
-                  <td class="whitespace-normal">{row.owner}</td>
-                  <td class="text-right">
+                  <td class="sheet-sticky sheet-sticky-flat font-medium">{row.flatId}</td>
+                  <td class="sheet-sticky sheet-sticky-resident">{row.resident}</td>
+                  <td class:list={['text-right', { 'sheet-cell-pending': pending }]}>
                     {canEdit ? (
                       <input
                         class="sheet-input text-right"
@@ -45,8 +54,8 @@ const canEdit = Astro.locals.canEdit;
                         inputmode="decimal"
                         name={`amount:${row.flatId}`}
                         value={row.amount ? String(row.amount) : ''}
-                        data-change-label={row.owner}
-                        aria-label={`${row.owner} puja amount`}
+                        data-change-label={row.resident}
+                        aria-label={`${row.resident} puja contribution`}
                         autocomplete="off"
                       />
                     ) : (
@@ -54,9 +63,9 @@ const canEdit = Astro.locals.canEdit;
                     )}
                   </td>
                 </tr>
-              ))}
+              );})}
               <tr class="bg-violet text-white">
-                <td colspan="2" class="font-medium">Grand total (Cash)</td>
+                <td class="sheet-sticky sheet-sticky-flat bg-violet font-medium" colspan="2">Grand total (Cash)</td>
                 <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.pujaTotal)}</td>
               </tr>
             </tbody>

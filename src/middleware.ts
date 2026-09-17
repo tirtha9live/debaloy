@@ -1,6 +1,8 @@
 import { defineMiddleware } from 'astro:middleware';
 import { readSession } from './lib/auth';
-import { touchVisitor } from './lib/activity';
+import { recordPageView, touchVisitor } from './lib/activity';
+import { isMaintenanceMode } from './lib/debug';
+import { listYears, resolveYear } from './lib/years';
 
 const PUBLIC_PREFIXES = [
   '/api/login',
@@ -24,19 +26,21 @@ function shouldCountView(method: string, pathname: string) {
 }
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  context.locals.maintenanceMode = isMaintenanceMode();
   const session = await readSession(context.cookies);
   const viewAsResident =
     session?.role === 'admin' && context.url.searchParams.get('view') === 'resident';
 
   context.locals.session = session;
   context.locals.viewAsResident = Boolean(viewAsResident);
-  context.locals.canEdit = session?.role === 'admin' && !viewAsResident;
 
   if (isPublicPath(context.url.pathname)) {
+    context.locals.canEdit = false;
     return next();
   }
 
   if (context.url.pathname === '/404' || context.url.pathname === '/500') {
+    context.locals.canEdit = false;
     return next();
   }
 
@@ -47,12 +51,20 @@ export const onRequest = defineMiddleware(async (context, next) => {
     return context.redirect('/');
   }
 
-  if (context.url.pathname === '/ledger/activity' && !context.locals.canEdit) {
+  const years = await listYears();
+  const requested = Number(context.url.searchParams.get('year'));
+  const selected = resolveYear(years, Number.isInteger(requested) && requested > 0 ? requested : null);
+  context.locals.ledgerYears = years;
+  context.locals.ledgerYear = selected;
+  context.locals.canEdit = session.role === 'admin' && !viewAsResident && selected.endDate == null;
+
+  if (context.url.pathname === '/ledger/activity' && !(session.role === 'admin' && !viewAsResident)) {
     return context.redirect(viewAsResident ? '/ledger?view=resident' : '/ledger');
   }
 
   if (session && shouldCountView(context.request.method, context.url.pathname)) {
     await touchVisitor(session, context.request, 'view');
+    await recordPageView(session, context.request);
   }
 
   return next();

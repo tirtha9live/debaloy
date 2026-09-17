@@ -10,22 +10,26 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "cf:build": "astro build",
-    "cf:deploy": "npm run cf:build && wrangler deploy",
+    "cf:deploy": "npm run test && npm run cf:build && wrangler deploy",
     "cf:dev": "wrangler dev",
-    "cf:types": "wrangler types"
+    "cf:types": "wrangler types",
+    "prepare": "husky"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^13.6.0",
     "@tailwindcss/vite": "^4.3.0",
     "astro": "^6.4.2",
     "exceljs": "^4.4.0",
-    "html-to-image": "^1.11.13",
     "wrangler": "^4.96.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",
-    "tailwindcss": "^4.3.0"
+    "husky": "^9.1.7",
+    "tailwindcss": "^4.3.0",
+    "vitest": "^5.0.1"
   }
 }

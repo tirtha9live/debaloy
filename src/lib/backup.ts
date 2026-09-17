@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 export const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 
 export type RestoreMode = 'overwrite' | 'merge';
@@ -18,6 +18,8 @@ export type LedgerBackup = {
     settings: unknown[];
     visitors: unknown[];
     login_events: unknown[];
+    withdrawals: unknown[];
+    ledger_years: unknown[];
   };
 };
 
@@ -41,11 +43,11 @@ export function backupFilename(date = new Date()) {
 
 export async function buildLedgerBackup(): Promise<LedgerBackup> {
   const database = db();
-  const [flats, maintenance, puja, categories, entries, settings, visitors, loginEvents] =
+  const [flats, maintenance, puja, categories, entries, settings, visitors, loginEvents, withdrawals, ledgerYears] =
     await database.batch([
-      database.prepare('SELECT id, owner, sort_order FROM flats ORDER BY sort_order, id'),
+      database.prepare('SELECT id, resident, sort_order FROM flats ORDER BY sort_order, id'),
       database.prepare('SELECT flat_id, month, amount, mode FROM maintenance ORDER BY flat_id, month'),
-      database.prepare('SELECT flat_id, amount FROM puja ORDER BY flat_id'),
+      database.prepare('SELECT flat_id, year_id, amount FROM puja ORDER BY year_id, flat_id'),
       database.prepare(
         'SELECT id, kind, name, sort_order, is_builtin FROM categories ORDER BY kind, sort_order, id',
       ),
@@ -58,6 +60,12 @@ export async function buildLedgerBackup(): Promise<LedgerBackup> {
       ),
       database.prepare(
         'SELECT id, at, outcome, role, ip, device, user_agent, fingerprint, session_id FROM login_events ORDER BY id',
+      ),
+      database.prepare('SELECT id, date, amount, note, created_at FROM withdrawals ORDER BY id'),
+      database.prepare(
+        `SELECT id, label, start_date, end_date, opening_cash, opening_bank,
+                cash_in_hand, cash_in_bank, cash_in_hand_override, cash_in_bank_override, created_at
+         FROM ledger_years ORDER BY start_date, id`,
       ),
     ]);
 
@@ -74,6 +82,8 @@ export async function buildLedgerBackup(): Promise<LedgerBackup> {
       settings: settings.results ?? [],
       visitors: visitors.results ?? [],
       login_events: loginEvents.results ?? [],
+      withdrawals: withdrawals.results ?? [],
+      ledger_years: ledgerYears.results ?? [],
     },
   };
 }
@@ -95,6 +105,12 @@ function asText(value: unknown, max = 240) {
 function asAmount(value: unknown) {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function asOptionalAmount(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
 }
 
 function asInt(value: unknown) {
@@ -141,6 +157,8 @@ export function parseLedgerBackup(raw: string): LedgerBackup {
       settings: asList(tables.settings),
       visitors: asList(tables.visitors),
       login_events: asList(tables.login_events),
+      withdrawals: asList(tables.withdrawals),
+      ledger_years: asList(tables.ledger_years),
     },
   };
 }
@@ -173,10 +191,12 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
     statements.push(
       database.prepare('DELETE FROM login_events'),
       database.prepare('DELETE FROM visitors'),
+      database.prepare('DELETE FROM withdrawals'),
       database.prepare('DELETE FROM entries'),
       database.prepare('DELETE FROM categories'),
       database.prepare('DELETE FROM maintenance'),
       database.prepare('DELETE FROM puja'),
+      database.prepare('DELETE FROM ledger_years'),
       database.prepare('DELETE FROM settings'),
       database.prepare('DELETE FROM flats'),
     );
@@ -185,14 +205,54 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
   for (const row of backup.tables.flats) {
     const item = asRecord(row);
     const id = asText(item?.id, 16);
-    const owner = asText(item?.owner, 80);
-    if (!item || !id || !owner) continue;
+    const resident =
+      asText(item?.resident, 80) || asText(item?.owner, 80);
+    if (!item || !id || !resident) continue;
     statements.push(
       database
         .prepare(
-          `INSERT${conflict} INTO flats (id, owner, sort_order) VALUES (?, ?, ?)`,
+          `INSERT${conflict} INTO flats (id, resident, sort_order) VALUES (?, ?, ?)`,
         )
-        .bind(id, owner, asInt(item.sort_order)),
+        .bind(id, resident, asInt(item.sort_order)),
+    );
+  }
+
+  const yearRows = backup.tables.ledger_years;
+  if (!yearRows.length) {
+    statements.push(
+      database
+        .prepare(
+          `INSERT${conflict} INTO ledger_years (
+             id, label, start_date, end_date, opening_cash, opening_bank
+           ) VALUES (1, 'FY 2026-27', '2026-09-01', NULL, 1364, 229460.9)`,
+        ),
+    );
+  }
+  for (const row of yearRows) {
+    const item = asRecord(row);
+    const startDate = asDate(item?.start_date) || asDate(item?.startDate);
+    if (!item || !startDate) continue;
+    const id = asInt(item.id) || 1;
+    statements.push(
+      database
+        .prepare(
+          `INSERT${conflict} INTO ledger_years (
+             id, label, start_date, end_date, opening_cash, opening_bank,
+             cash_in_hand, cash_in_bank, cash_in_hand_override, cash_in_bank_override
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .bind(
+          id,
+          asText(item.label, 40) || 'FY',
+          startDate,
+          asDate(item.end_date) || asDate(item.endDate),
+          asAmount(item.opening_cash ?? item.openingCash),
+          asAmount(item.opening_bank ?? item.openingBank),
+          asOptionalAmount(item.cash_in_hand ?? item.cashInHand),
+          asOptionalAmount(item.cash_in_bank ?? item.cashInBank),
+          asInt(item.cash_in_hand_override ?? item.cashInHandOverride) ? 1 : 0,
+          asInt(item.cash_in_bank_override ?? item.cashInBankOverride) ? 1 : 0,
+        ),
     );
   }
 
@@ -206,7 +266,7 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
         .prepare(
           `INSERT${conflict} INTO maintenance (flat_id, month, amount, mode) VALUES (?, ?, ?, ?)`,
         )
-        .bind(flatId, month, asAmount(item.amount), asMode(item.mode)),
+        .bind(flatId, month, asOptionalAmount(item.amount), asMode(item.mode)),
     );
   }
 
@@ -216,8 +276,8 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
     if (!item || !flatId) continue;
     statements.push(
       database
-        .prepare(`INSERT${conflict} INTO puja (flat_id, amount) VALUES (?, ?)`)
-        .bind(flatId, asAmount(item.amount)),
+        .prepare(`INSERT${conflict} INTO puja (flat_id, year_id, amount) VALUES (?, ?, ?)`)
+        .bind(flatId, asInt(item.year_id) || 1, asAmount(item.amount)),
     );
   }
 
@@ -294,6 +354,31 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
             asAmount(item.amount),
             createdAt,
           ),
+      );
+    }
+  }
+
+  for (const row of backup.tables.withdrawals) {
+    const item = asRecord(row);
+    if (!item) continue;
+    const amount = asAmount(item.amount);
+    if (amount <= 0) continue;
+    const id = asInt(item.id);
+    const createdAt = asText(item.created_at, 40) || new Date().toISOString();
+    if (id > 0) {
+      statements.push(
+        database
+          .prepare(
+            `INSERT${conflict} INTO withdrawals (id, date, amount, note, created_at)
+             VALUES (?, ?, ?, ?, ?)`,
+          )
+          .bind(id, asDate(item.date), amount, asText(item.note, 240), createdAt),
+      );
+    } else if (!overwrite) {
+      statements.push(
+        database
+          .prepare('INSERT INTO withdrawals (date, amount, note, created_at) VALUES (?, ?, ?, ?)')
+          .bind(asDate(item.date), amount, asText(item.note, 240), createdAt),
       );
     }
   }
