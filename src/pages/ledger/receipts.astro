@@ -21,7 +21,7 @@ const canEdit = Astro.locals.canEdit;
       title="This year’s account."
       subtitle={canEdit
         ? `The ${snapshot.year.label} receipts & payments statement, in the same form as the original takeover record. Totals update as Maintenance, Puja Contribution, Other Collections, and Expenses are added. Download Excel for the current statement.`
-        : `The ${snapshot.year.label} receipts & payments statement. 0 on Maintenance means payment not required.`}
+        : `The ${snapshot.year.label} receipts & payments statement. NPR on Maintenance means no payment required.`}
       canEdit={canEdit}
     />
 

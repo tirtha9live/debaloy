@@ -1,0 +1,263 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import { ASSOCIATION, FLATS } from '../../lib/constants';
+import { withView } from '../../lib/auth';
+import { formatAmount, formatDateTime } from '../../lib/format';
+import { listFlatMobiles } from '../../lib/mobiles';
+import { listLinkedAccounts, listOnlinePayments, paymentTypeLabel } from '../../lib/online-payments';
+import { ledgerCurrentMonthKey } from '../../lib/sheet';
+import { monthsForYear } from '../../lib/years';
+
+const session = Astro.locals.session;
+const viewAsResident = Astro.locals.viewAsResident;
+const year = Astro.locals.ledgerYear;
+const isTreasurer = session?.role === 'admin' && !viewAsResident;
+const canSubmit = Boolean(session) && !viewAsResident && year && year.endDate == null;
+const canApprove = Boolean(Astro.locals.canEdit);
+const mobiles = await listFlatMobiles();
+const pending = year ? await listOnlinePayments(year.id, 'pending') : [];
+const linked = isTreasurer ? await listLinkedAccounts() : [];
+const error = Astro.url.searchParams.get('error');
+const months = year ? monthsForYear(year.startDate, year.endDate) : [];
+const currentMonth = months.includes(ledgerCurrentMonthKey()) ? ledgerCurrentMonthKey() : months[0] ?? '';
+const directory = FLATS.map((flat) => {
+  const row = mobiles.find((item) => item.flatId === flat.id);
+  return { id: flat.id, resident: flat.resident, last4: row?.last4 ?? null };
+});
+const formAction = withView('/api/ledger/payments', viewAsResident);
+const eReceiptsHref = withView('/ledger/e-receipts', viewAsResident);
+const errorCopy: Record<string, string> = {
+  payment: 'Choose a flat, type, and an amount greater than 0.',
+  bank: 'Enter the bank name and account holder from the statement before approving.',
+  month: 'Choose the maintenance month this payment belongs to.',
+  missing: 'That payment is no longer pending.',
+};
+---
+
+<Layout title={`Online payments · ${ASSOCIATION}`} noindex>
+  <Navigation current="payments" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="payments"
+      title="Online payments."
+      subtitle={isTreasurer
+        ? 'Match each submission to the bank statement, add bank and account holder, then approve. Approved accounts stay against the flat for later statement checks.'
+        : 'Tell us about a bank transfer. It stays pending until the treasurer verifies it against the statement.'}
+    />
+
+    {error && errorCopy[error] && (
+      <p class="mt-6 rounded-md bg-error-soft px-3 py-2 text-sm text-error-deep dark:bg-red-950/40 dark:text-red-200">
+        {errorCopy[error]}
+      </p>
+    )}
+
+    {!isTreasurer && (
+      <section class="card-elevate mt-6 rounded-xl bg-canvas p-5 dark:bg-slate-900 sm:mt-8 sm:p-6">
+        <h2 class="text-lg font-semibold tracking-tight">Submit a payment</h2>
+        <p class="mt-1 text-sm leading-6 text-body dark:text-slate-300">
+          Name and last 4 mobile digits fill in from the flat.
+          <a href={eReceiptsHref} class="text-link underline decoration-link/30 underline-offset-2 hover:decoration-link">Change mobile number</a>
+        </p>
+        <form
+          method="post"
+          action={formAction}
+          class="mt-5 grid gap-4"
+          data-ledger-form
+          data-confirm-title="Submit this payment?"
+          data-confirm-copy="The treasurer will match this against the bank statement. Nothing is posted to Maintenance until it is approved."
+          data-confirm-label="Confirm submit"
+          inert={canSubmit ? undefined : true}
+        >
+          <input type="hidden" name="intent" value="create" />
+          <label class="block">
+            <span class="entry-label">Flat no</span>
+            <select class="sheet-input mt-1" name="flat_id" required data-flat-picker="payment-flats" data-change-label="Flat">
+              <option value="">Choose flat</option>
+              {FLATS.map((flat) => (
+                <option value={flat.id}>{flat.id}</option>
+              ))}
+            </select>
+          </label>
+          <label class="block">
+            <span class="entry-label">Resident</span>
+            <input class="sheet-input mt-1" type="text" data-fill-resident data-confirm-include="1" data-change-label="Resident" disabled />
+          </label>
+          <label class="block">
+            <span class="entry-label">Mobile</span>
+            <input class="sheet-input mt-1 font-mono" type="text" data-fill-mobile data-confirm-include="1" data-change-label="Mobile" disabled />
+          </label>
+          <label class="block">
+            <span class="entry-label">Type</span>
+            <select class="sheet-input mt-1" name="payment_type" required data-change-label="Type">
+              <option value="maintenance">Maintenance</option>
+              <option value="dues">Dues</option>
+              <option value="others">Others</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="entry-label">Description</span>
+            <textarea
+              class="sheet-input mt-1 min-h-24 py-2"
+              name="description"
+              maxlength="240"
+              data-change-label="Description"
+              placeholder="Mention the source account holder name if it is different from the flat resident."
+            ></textarea>
+            <p class="mt-1 text-xs leading-5 text-mute dark:text-slate-400">
+              Mention the source account holder name if it is different from the flat resident.
+            </p>
+          </label>
+          <label class="flex min-h-11 items-start gap-3 rounded-md border border-hairline px-3 py-3 dark:border-slate-700">
+            <input class="mt-1 h-5 w-5 shrink-0" type="checkbox" name="link_account" value="1" data-change-label="Link this account for auto-syncs" />
+            <span class="text-sm leading-6 text-body dark:text-slate-300">
+              Link this account against my flat for auto-syncs from next month.
+            </span>
+          </label>
+          <label class="block">
+            <span class="entry-label">Amount (Rs.)</span>
+            <input class="sheet-input mt-1" type="text" inputmode="decimal" name="amount" placeholder="0.00" required data-change-label="Amount" autocomplete="off" />
+          </label>
+          {canSubmit ? (
+            <button type="submit" class="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950">
+              Submit
+            </button>
+          ) : (
+            <p class="text-sm text-body dark:text-slate-300">Viewing as resident — submissions are off. Frozen years are read-only.</p>
+          )}
+        </form>
+      </section>
+    )}
+
+    <section class="card-elevate mt-6 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900 sm:mt-8">
+      <div class="border-b border-hairline px-4 py-3 dark:border-slate-800 sm:px-5">
+        <h2 class="text-lg font-semibold tracking-tight">Pending verification</h2>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">
+          {isTreasurer
+            ? 'Open the bank statement, fill bank and account holder, then approve. Maintenance goes on the tracker; dues and others go to Other Collections as Bank.'
+            : 'Everyone who has submitted a transfer. The tracker updates after the treasurer verifies it.'}
+        </p>
+      </div>
+      {pending.length === 0 ? (
+        <p class="px-4 py-6 text-sm text-body dark:text-slate-300 sm:px-5">No rows yet.</p>
+      ) : (
+        <div class="divide-y divide-hairline dark:divide-slate-800">
+          {pending.map((row) => (
+            isTreasurer ? (
+              <form
+                method="post"
+                action="/api/ledger/payments"
+                class="grid gap-3 p-4 sm:p-5"
+                data-ledger-form
+                data-confirm-title="Approve this payment?"
+                data-confirm-copy="This records the bank details and updates the ledger. Last 3 approved accounts for the flat are kept for later statement checks."
+                data-confirm-label="Confirm approve"
+              >
+                <input type="hidden" name="id" value={row.id} />
+                <div class="grid gap-1 text-sm">
+                  <p class="font-medium text-ink dark:text-slate-100">Flat {row.flatId} · {row.resident}</p>
+                  <p class="text-body dark:text-slate-300">
+                    {paymentTypeLabel(row.paymentType)} · {formatAmount(row.amount)} · {row.mobileLast4 ? `•••• ${row.mobileLast4}` : 'No mobile'}
+                  </p>
+                  {row.description && <p class="whitespace-pre-wrap text-body dark:text-slate-300">{row.description}</p>}
+                  <p class="text-xs text-mute dark:text-slate-400">Submitted {formatDateTime(row.submittedAt)}{row.linkAccount ? ' · link for auto-sync' : ''}</p>
+                </div>
+                <input type="text" class="hidden" value={`Flat ${row.flatId}`} disabled data-confirm-include="1" data-change-label="Flat" />
+                <input type="text" class="hidden" value={row.resident} disabled data-confirm-include="1" data-change-label="Resident" />
+                <input type="text" class="hidden" value={paymentTypeLabel(row.paymentType)} disabled data-confirm-include="1" data-change-label="Type" />
+                <input type="text" class="hidden" inputmode="decimal" value={String(row.amount)} disabled data-confirm-include="1" data-change-label="Amount" />
+                <label class="block">
+                  <span class="entry-label">Bank</span>
+                  <input class="sheet-input mt-1" type="text" name="bank" required maxlength="80" autocomplete="off" data-change-label={`${row.resident} · bank`} />
+                </label>
+                <label class="block">
+                  <span class="entry-label">Account holder name</span>
+                  <input class="sheet-input mt-1" type="text" name="account_holder" required maxlength="80" autocomplete="off" data-change-label={`${row.resident} · account holder`} />
+                </label>
+                {row.paymentType === 'maintenance' && (
+                  <label class="block">
+                    <span class="entry-label">Maintenance month</span>
+                    <select class="sheet-input mt-1" name="month" required data-change-label={`${row.resident} · month`}>
+                      {months.map((month) => (
+                        <option value={month} selected={month === currentMonth}>{month}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {canApprove ? (
+                  <button type="submit" name="intent" value="approve" class="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950">
+                    Approve
+                  </button>
+                ) : (
+                  <p class="text-sm text-body dark:text-slate-300">Open the current year to approve.</p>
+                )}
+              </form>
+            ) : (
+              <article class="grid gap-1 p-4 text-sm sm:p-5">
+                <p class="font-medium text-ink dark:text-slate-100">Flat {row.flatId} · {row.resident}</p>
+                <p class="text-body dark:text-slate-300">
+                  {paymentTypeLabel(row.paymentType)} · {formatAmount(row.amount)} · {row.mobileLast4 ? `•••• ${row.mobileLast4}` : 'No mobile'}
+                </p>
+                {row.description && <p class="whitespace-pre-wrap text-body dark:text-slate-300">{row.description}</p>}
+                <p class="text-xs text-mute dark:text-slate-400">Submitted {formatDateTime(row.submittedAt)}</p>
+              </article>
+            )
+          ))}
+        </div>
+      )}
+    </section>
+
+    {isTreasurer && (
+      <section class="card-elevate mt-6 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900 sm:mt-8">
+        <div class="border-b border-hairline px-4 py-3 dark:border-slate-800 sm:px-5">
+          <h2 class="text-lg font-semibold tracking-tight">Last used bank accounts</h2>
+          <p class="mt-1 text-sm text-body dark:text-slate-300">
+            Up to 3 approved accounts per flat, newest first. Use these when checking the monthly statement; a credit from a listed account belongs to that flat.
+          </p>
+        </div>
+        <div class="sheet-scroll">
+          <table class="sheet-table w-full">
+            <thead>
+              <tr>
+                <th class="text-left">Flat</th>
+                <th class="text-left">Resident</th>
+                <th class="text-left">Account 1</th>
+                <th class="text-left">Account 2</th>
+                <th class="text-left">Account 3</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linked.map((row) => (
+                <tr>
+                  <td>{row.flatId}</td>
+                  <td class="whitespace-normal">{row.resident}</td>
+                  {[0, 1, 2].map((index) => {
+                    const account = row.accounts[index];
+                    return (
+                      <td class="max-w-[12rem] whitespace-normal text-sm">
+                        {account ? (
+                          <>
+                            <span class="block">{account.bank}</span>
+                            <span class="block text-mute dark:text-slate-400">{account.accountHolder}</span>
+                            {account.autoSync && <span class="mt-1 block text-xs text-mute dark:text-slate-400">Auto-sync</span>}
+                          </>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    )}
+  </main>
+  <Footer />
+  <script type="application/json" id="payment-flats" set:html={JSON.stringify(directory)} />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

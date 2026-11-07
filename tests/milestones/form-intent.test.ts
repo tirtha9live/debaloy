@@ -17,6 +17,8 @@ describe('form intent (delete vs hidden update)', () => {
       'pages/api/ledger/entries.ts',
       'pages/api/ledger/settings.ts',
       'pages/api/ledger/years.ts',
+      'pages/api/ledger/e-receipts.ts',
+      'pages/api/ledger/payments.ts',
     ]) {
       expect(readSrc(file), file).toContain('readFormIntent');
     }

@@ -6,6 +6,8 @@ import LedgerHeader from './LedgerHeader.astro';
 import { ASSOCIATION, MODES } from '../lib/constants';
 import { displayDate, formatAmount } from '../lib/format';
 import { categoryTotals, loadLedger, namedCategories } from '../lib/ledger';
+import { listReceiptsByEntry, receiptHref } from '../lib/receipts';
+import { formatBytes, RECEIPT_ACCEPT } from '../lib/receipt-limits';
 import type { CategoryKind } from '../lib/constants';
 
 interface Props {
@@ -21,14 +23,24 @@ const hasCustom = totals.some((category) => !category.isBuiltin);
 const entries = snapshot.entries.filter((entry) => entry.kind === kind);
 const grand = totals.reduce((sum, item) => sum + item.total, 0);
 const isIncome = kind === 'income';
+const receipts = isIncome ? new Map() : await listReceiptsByEntry();
+const receiptError = Astro.url.searchParams.get('receipt_error');
+const receiptErrors: Record<string, string> = {
+  size: 'That file is too large. Photos are compressed automatically; PDFs must be 4 MB or less.',
+  type: 'Choose a photo (JPG, PNG, WebP) or a PDF.',
+  rate: 'Too many uploads in a minute. Wait a moment and try again.',
+  daily: 'Daily upload limit reached (50 receipts). Try again tomorrow.',
+  file: 'Choose a file to upload.',
+  missing: 'That expense no longer exists.',
+};
 const title = isIncome ? 'Other collections.' : 'Expense tracker.';
 const subtitle = canEdit
   ? isIncome
     ? 'Add every other receipt with date, type, and amount. Category totals on the right flow into this year’s account.'
-    : 'Add every expense with date, type, and amount. Category totals on the right flow into this year’s account.'
+    : 'Add every expense with date, type, and amount. Attach a photo or PDF of the bill so residents can see it. Category totals on the right flow into this year’s account.'
   : isIncome
     ? 'Other receipts besides maintenance and puja contribution.'
-    : 'Payments recorded this year.';
+    : 'Payments recorded this year. Tap Receipt to see the bill where one is attached.';
 ---
 
 <Layout title={`${isIncome ? 'Other Collections' : 'Expenses'} · ${ASSOCIATION}`} noindex>
@@ -39,6 +51,12 @@ const subtitle = canEdit
       title={title}
       subtitle={subtitle}
     />
+
+    {receiptError && receiptErrors[receiptError] && (
+      <p class="mt-6 rounded-md bg-error-soft px-3 py-2 text-sm text-error-deep dark:bg-red-950/40 dark:text-red-200" role="alert">
+        {receiptErrors[receiptError]}
+      </p>
+    )}
 
     <section id="sheet-capture" class="mt-6 grid gap-6 sm:mt-8 xl:grid-cols-[minmax(0,1fr)_20rem]">
       <div class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
@@ -103,12 +121,66 @@ const subtitle = canEdit
                           <button type="submit" name="intent" value="delete" class="entry-btn border border-error/30 text-error">Delete</button>
                         </div>
                       </form>
+                      {!isIncome && (
+                        <div class="receipt-bar">
+                          {receipts.get(entry.id) ? (
+                            <a
+                              class="receipt-link"
+                              href={receiptHref(receipts.get(entry.id)!)}
+                              target="_blank"
+                              rel="noopener"
+                              data-receipt-view={receipts.get(entry.id)!.contentType}
+                              data-receipt-title={`${entry.category} · ${displayDate(entry.date)} · ${formatAmount(entry.amount)}`}
+                            >
+                              View receipt <span class="text-mute dark:text-slate-400">({formatBytes(receipts.get(entry.id)!.size)})</span>
+                            </a>
+                          ) : (
+                            <span class="text-mute dark:text-slate-400">No receipt</span>
+                          )}
+                          <form
+                            method="post"
+                            action="/api/ledger/receipts"
+                            enctype="multipart/form-data"
+                            data-receipt-form
+                            data-receipt-label={`${entry.category} · ${displayDate(entry.date)} · ${formatAmount(entry.amount)}`}
+                            data-receipt-existing={receipts.get(entry.id)?.fileName || (receipts.has(entry.id) ? 'Receipt' : '')}
+                          >
+                            <input type="hidden" name="entry_id" value={entry.id} />
+                            <label class="entry-btn receipt-pick border border-hairline dark:border-slate-700">
+                              {receipts.has(entry.id) ? 'Replace' : 'Attach receipt'}
+                              <input class="sr-only" type="file" name="receipt" accept={RECEIPT_ACCEPT} data-receipt-input />
+                            </label>
+                            <button type="submit" class="entry-btn border border-hairline dark:border-slate-700" data-receipt-submit>Upload</button>
+                            <span class="receipt-status" data-receipt-status aria-live="polite"></span>
+                          </form>
+                          {receipts.has(entry.id) && (
+                            <form method="post" action="/api/ledger/receipts" data-receipt-delete>
+                              <input type="hidden" name="entry_id" value={entry.id} />
+                              <button type="submit" name="intent" value="delete" class="entry-btn border border-error/30 text-error">Remove</button>
+                            </form>
+                          )}
+                        </div>
+                      )}
                     </td>
                   ) : (
                     <>
                       <td>{displayDate(entry.date)}</td>
                       <td class="whitespace-normal">{entry.category}</td>
-                      <td class="max-w-xs whitespace-normal">{entry.description}</td>
+                      <td class="max-w-xs whitespace-normal">
+                        {entry.description}
+                        {receipts.get(entry.id) && (
+                          <a
+                            class="receipt-link ml-1 inline-flex min-h-11 items-center lg:min-h-0"
+                            href={receiptHref(receipts.get(entry.id)!)}
+                            target="_blank"
+                            rel="noopener"
+                            data-receipt-view={receipts.get(entry.id)!.contentType}
+                            data-receipt-title={`${entry.category} · ${displayDate(entry.date)} · ${formatAmount(entry.amount)}`}
+                          >
+                            Receipt
+                          </a>
+                        )}
+                      </td>
                       <td>{entry.mode}</td>
                       <td class="text-right tabular-nums">{formatAmount(entry.amount)}</td>
                     </>

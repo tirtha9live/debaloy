@@ -20,7 +20,29 @@ import {
 export type MaintenanceCell = {
   amount: number | null;
   mode: PayMode;
+  npr: boolean;
+  note: string | null;
+  paidOn: string | null;
 };
+
+export type MaintenanceUpdate = {
+  flatId: string;
+  month: string;
+  amount: number | null;
+  mode: PayMode;
+  npr: boolean;
+  note?: string | null;
+  paidOn?: string | null;
+};
+
+/** Notes live on NPR cells and paid cells; the received date only on paid cells. */
+export function maintenanceCellExtras(cell: { amount: number | null; npr: boolean; note?: string | null; paidOn?: string | null }) {
+  const paid = !cell.npr && cell.amount != null && cell.amount > 0;
+  return {
+    note: cell.npr || paid ? cell.note?.trim() || null : null,
+    paidOn: paid ? cell.paidOn || null : null,
+  };
+}
 
 export type MaintenanceRow = {
   flatId: string;
@@ -148,7 +170,7 @@ export async function loadLedger(selectedYear?: LedgerYear): Promise<LedgerSnaps
   const database = db();
   const [maintenanceRows, pujaRows, categoryRows, entryRows, withdrawalRows] = await database.batch([
     database.prepare(
-      'SELECT flat_id, month, amount, mode FROM maintenance ORDER BY flat_id, month',
+      'SELECT flat_id, month, amount, mode, npr, note, paid_on FROM maintenance ORDER BY flat_id, month',
     ),
     database.prepare('SELECT flat_id, amount FROM puja WHERE year_id = ?').bind(year.id),
     database.prepare(
@@ -168,10 +190,17 @@ export async function loadLedger(selectedYear?: LedgerYear): Promise<LedgerSnaps
     month: string;
     amount: number | null;
     mode: string;
+    npr: number | null;
+    note: string | null;
+    paid_on: string | null;
   }>) {
+    const npr = Boolean(row.npr);
+    const amount = npr || row.amount == null ? null : Number(row.amount);
     cells.set(`${row.flat_id}:${row.month}`, {
-      amount: row.amount == null ? null : Number(row.amount),
+      amount,
       mode: asMode(row.mode),
+      npr,
+      ...maintenanceCellExtras({ amount, npr, note: row.note, paidOn: row.paid_on }),
     });
   }
 
@@ -185,7 +214,13 @@ export async function loadLedger(selectedYear?: LedgerYear): Promise<LedgerSnaps
     let totalBank = 0;
     let totalCash = 0;
     for (const month of months) {
-      const cell = cells.get(`${flat.id}:${month}`) ?? { amount: null, mode: 'Cash' as const };
+      const cell = cells.get(`${flat.id}:${month}`) ?? {
+        amount: null,
+        mode: 'Cash' as const,
+        npr: false,
+        note: null,
+        paidOn: null,
+      };
       monthCells[month] = cell;
       const amount = cell.amount ?? 0;
       if (cell.mode === 'Bank') totalBank += amount;
@@ -485,19 +520,21 @@ export function buildReceiptsPayments(snapshot: LedgerSnapshot): {
   return { lines, receiptTotal, paymentTotal };
 }
 
-export async function saveMaintenance(
-  updates: Array<{ flatId: string; month: string; amount: number | null; mode: PayMode }>,
-) {
+export async function saveMaintenance(updates: MaintenanceUpdate[]) {
   const database = db();
-  const statements = updates.map((update) =>
-    database
+  const statements = updates.map((update) => {
+    const amount = update.npr ? null : update.amount;
+    const extras = maintenanceCellExtras({ ...update, amount });
+    return database
       .prepare(
-        `INSERT INTO maintenance (flat_id, month, amount, mode)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(flat_id, month) DO UPDATE SET amount = excluded.amount, mode = excluded.mode`,
+        `INSERT INTO maintenance (flat_id, month, amount, mode, npr, note, paid_on)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(flat_id, month) DO UPDATE SET
+           amount = excluded.amount, mode = excluded.mode, npr = excluded.npr,
+           note = excluded.note, paid_on = excluded.paid_on`,
       )
-      .bind(update.flatId, update.month, update.amount, update.mode),
-  );
+      .bind(update.flatId, update.month, amount, update.mode, update.npr ? 1 : 0, extras.note, extras.paidOn);
+  });
   if (statements.length) await database.batch([...statements, lastUpdatedStatement(database)]);
 }
 

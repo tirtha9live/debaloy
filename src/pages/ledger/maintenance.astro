@@ -4,13 +4,14 @@ import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
 import { ASSOCIATION } from '../../lib/constants';
-import { formatAmount } from '../../lib/format';
+import { CELL_NOTE_MAX, formatAmount, maintenanceCellTip, NPR_LABEL } from '../../lib/format';
 import { loadLedger } from '../../lib/ledger';
 import { isMaintenancePaymentPending } from '../../lib/sheet';
 
 const snapshot = await loadLedger(Astro.locals.ledgerYear);
 const months = snapshot.months;
 const canEdit = Astro.locals.canEdit;
+const showMode = Astro.locals.session?.role === 'admin' && !Astro.locals.viewAsResident;
 ---
 
 <Layout title={`Maintenance · ${ASSOCIATION}`} noindex>
@@ -19,23 +20,20 @@ const canEdit = Astro.locals.canEdit;
     <LedgerHeader
       sheet="maintenance"
       title="Maintenance tracker."
-      subtitle={canEdit
-        ? 'Enter amount and mode (Bank / Cash) for each month. Mode defaults to Cash. Leave a cell blank if it is not recorded. This year’s account updates from this sheet.'
-        : 'Monthly collections by flat. 0 means payment not required.'}
+      subtitle={showMode
+        ? 'Enter amount and mode (Bank / Cash) for each month. Mode defaults to Cash. Type NPR or pick NPR in mode when no payment is required. Add the received date and an optional short note; residents see them on hover. This year’s account updates from this sheet.'
+        : 'Monthly collections by flat. NPR means no payment required.'}
       canEdit={canEdit}
     />
 
     <form id="maintenance-form" method="post" action="/api/ledger/maintenance" data-ledger-form class="mt-6 sm:mt-8">
       <p class="sheet-swipe-hint">Swipe across for months. Scroll for every flat. Flat and resident stay on screen.</p>
       <div class="mb-3 text-sm leading-6 text-body dark:text-slate-300">
-        {canEdit && (
-          <p><span class="font-medium text-ink dark:text-slate-100">Blank</span> means not recorded.</p>
-        )}
         <p>
-          <span class="font-medium text-ink dark:text-slate-100">0</span> means payment not required — paid in advance, or some operating expenses were paid directly for the society, etc.
+          <span class="font-medium text-ink dark:text-slate-100">{NPR_LABEL}</span> means no payment required — paid in advance, or paid as dues at a later date. The amount is recorded in the month it was received.
         </p>
         <p>
-          <span class="sheet-legend-pending font-medium text-ink dark:text-slate-100">Payment pending</span> — current month not yet recorded.
+          <span class="sheet-legend-pending font-medium text-ink dark:text-slate-100">Payment pending</span> — blank for this month or an earlier month means not paid.
         </p>
       </div>
       <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
@@ -43,23 +41,27 @@ const canEdit = Astro.locals.canEdit;
           <table class="sheet-table">
             <thead>
               <tr>
-                <th rowspan="2" class="sheet-sticky sheet-sticky-flat">Flat</th>
-                <th rowspan="2" class="sheet-sticky sheet-sticky-resident">Resident</th>
+                <th rowspan={showMode ? 2 : 1} class="sheet-sticky sheet-sticky-flat">Flat</th>
+                <th rowspan={showMode ? 2 : 1} class="sheet-sticky sheet-sticky-resident">Resident</th>
                 {months.map((month) => (
-                  <th colspan="2" class="text-center">{month}</th>
+                  showMode
+                    ? <th colspan="2" class="text-center">{month}</th>
+                    : <th class="text-center">{month}</th>
                 ))}
-                <th rowspan="2">Total Bank</th>
-                <th rowspan="2">Total Cash</th>
-                <th rowspan="2">Total</th>
+                {showMode && <th rowspan="2">Total Bank</th>}
+                {showMode && <th rowspan="2">Total Cash</th>}
+                {showMode && <th rowspan="2">Total</th>}
               </tr>
-              <tr>
-                {months.map(() => (
-                  <>
-                    <th>Amount (Rs.)</th>
-                    <th>Mode</th>
-                  </>
-                ))}
-              </tr>
+              {showMode && (
+                <tr>
+                  {months.map(() => (
+                    <>
+                      <th>Amount (Rs.)</th>
+                      <th>Mode</th>
+                    </>
+                  ))}
+                </tr>
+              )}
             </thead>
             <tbody>
               {snapshot.maintenance.map((row) => (
@@ -67,7 +69,11 @@ const canEdit = Astro.locals.canEdit;
                   <td class="sheet-sticky sheet-sticky-flat font-medium">{row.flatId}</td>
                   <td class="sheet-sticky sheet-sticky-resident">{row.resident}</td>
                   {months.map((month) => {
-                    const pending = isMaintenancePaymentPending(month, row.months[month].amount, months);
+                    const cell = row.months[month];
+                    const pending = isMaintenancePaymentPending(month, cell, months);
+                    const paid = !cell.npr && (cell.amount ?? 0) > 0;
+                    const display = cell.npr ? NPR_LABEL : paid ? formatAmount(cell.amount) : '';
+                    const tip = maintenanceCellTip(cell);
                     return (
                     <>
                       <td class:list={[{ 'sheet-cell-pending': pending }]}>
@@ -77,35 +83,65 @@ const canEdit = Astro.locals.canEdit;
                             type="text"
                             inputmode="decimal"
                             name={`amount:${row.flatId}:${month}`}
-                            value={row.months[month].amount == null ? '' : String(row.months[month].amount)}
+                            value={cell.npr ? NPR_LABEL : cell.amount ? String(cell.amount) : ''}
                             data-change-label={`${row.resident} · ${month}`}
                             aria-label={`${row.resident} ${month} amount`}
                             autocomplete="off"
+                            data-cell-amount
                           />
+                          <input
+                            class="sheet-input sheet-cell-extra"
+                            type="date"
+                            name={`paid:${row.flatId}:${month}`}
+                            value={cell.paidOn ?? ''}
+                            data-change-label={`${row.resident} · ${month} · received`}
+                            aria-label={`${row.resident} ${month} received on`}
+                            hidden={!paid}
+                          />
+                          <input
+                            class="sheet-input sheet-cell-extra"
+                            type="text"
+                            name={`note:${row.flatId}:${month}`}
+                            value={cell.note ?? ''}
+                            maxlength={CELL_NOTE_MAX}
+                            placeholder={cell.npr ? 'Why NPR?' : 'Note, e.g. why more or less'}
+                            data-change-label={`${row.resident} · ${month} · note`}
+                            aria-label={`${row.resident} ${month} note`}
+                            autocomplete="off"
+                            hidden={!cell.npr && !paid}
+                          />
+                        ) : tip ? (
+                          <button type="button" class="sheet-cell-tip tabular-nums" title={tip} data-cell-tip={tip} aria-label={`${display}: ${tip}`}>
+                            {display}
+                          </button>
                         ) : (
-                          <span class="tabular-nums">{row.months[month].amount == null ? '' : formatAmount(row.months[month].amount)}</span>
+                          <span class="tabular-nums">{display}</span>
                         )}
                       </td>
-                      <td class:list={[{ 'sheet-cell-pending': pending }]}>
-                        {canEdit ? (
-                          <select
-                            class="sheet-input"
-                            name={`mode:${row.flatId}:${month}`}
-                            data-change-label={`${row.resident} · ${month} · mode`}
-                            aria-label={`${row.resident} ${month} mode`}
-                          >
-                            <option value="Cash" selected={row.months[month].mode === 'Cash'}>Cash</option>
-                            <option value="Bank" selected={row.months[month].mode === 'Bank'}>Bank</option>
-                          </select>
-                        ) : (
-                          row.months[month].mode
-                        )}
-                      </td>
+                      {showMode && (
+                        <td class:list={[{ 'sheet-cell-pending': pending }]}>
+                          {canEdit ? (
+                            <select
+                              class="sheet-input"
+                              name={`mode:${row.flatId}:${month}`}
+                              data-change-label={`${row.resident} · ${month} · mode`}
+                              aria-label={`${row.resident} ${month} mode`}
+                              data-npr-mode
+                            >
+                              <option value="Cash" selected={!cell.npr && cell.mode === 'Cash'}>Cash</option>
+                              <option value="Bank" selected={!cell.npr && cell.mode === 'Bank'}>Bank</option>
+                              <option value={NPR_LABEL} selected={cell.npr}>{NPR_LABEL}</option>
+                            </select>
+                          ) : (
+                            cell.npr ? '' : cell.mode
+                          )}
+                        </td>
+                      )}
                     </>
                   );})}
-                  <td class="text-right font-medium tabular-nums">{formatAmount(row.totalBank)}</td>
-                  <td class="text-right font-medium tabular-nums">{formatAmount(row.totalCash)}</td>
-                  <td class="text-right font-medium tabular-nums">{formatAmount(row.total)}</td>
+                  {showMode && <td class="text-right font-medium tabular-nums">{formatAmount(row.totalBank)}</td>}
+                  {showMode && <td class="text-right font-medium tabular-nums">{formatAmount(row.totalCash)}</td>}
+                  {showMode && <td class="text-right font-medium tabular-nums">{formatAmount(row.total)}</td>}
                 </tr>
               ))}
               <tr class="bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950">
@@ -113,12 +149,12 @@ const canEdit = Astro.locals.canEdit;
                 {months.map((month) => (
                   <>
                     <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.months[month])}</td>
-                    <td></td>
+                    {showMode && <td></td>}
                   </>
                 ))}
-                <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.bank)}</td>
-                <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.cash)}</td>
-                <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.grand)}</td>
+                {showMode && <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.bank)}</td>}
+                {showMode && <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.cash)}</td>}
+                {showMode && <td class="text-right font-medium tabular-nums">{formatAmount(snapshot.maintenanceTotals.grand)}</td>}
               </tr>
             </tbody>
           </table>

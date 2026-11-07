@@ -39,6 +39,7 @@ Only values on **your Cloudflare account** (and your machine for local dev) matt
 | :--- | :--- | :------ |
 | `RESIDENT_PASSWORD` | **Secret** | Read-only ledger login |
 | `ADMIN_PASSWORD` | **Secret** | Treasurer login (edit sheets) |
+| `PEXELS_API_KEY` | **Secret** (optional) | Festival photos on the landing page (free key from pexels.com/api). Without it, only cached/seed photos show. |
 | `DEBUG` | **Var** (`wrangler.toml`, default `"false"`) | When `"true"`, shows maintenance messaging on the site |
 | D1 `debaloy-ledger` | Binding | Ledger data |
 | KV `debaloy-session` | Binding | Login sessions (24h TTL) |

@@ -31,6 +31,17 @@ describe('server-side ledger audit', () => {
       publishSheet: 'settings',
     },
     { file: 'pages/api/ledger/categories.ts', awaitCalls: ['createCategory'], publishSheet: 'categories' },
+    { file: 'pages/api/ledger/e-receipts.ts', awaitCalls: ['saveFlatMobile'], publishSheet: 'e-receipts' },
+    {
+      file: 'pages/api/ledger/receipts.ts',
+      awaitCalls: ['deleteReceiptForEntry', 'saveReceipt'],
+      publishSheet: 'entries',
+    },
+    {
+      file: 'pages/api/ledger/payments.ts',
+      awaitCalls: ['approveOnlinePayment', 'createOnlinePayment'],
+      publishSheet: 'payments',
+    },
   ];
 
   for (const { file, awaitCalls, publishSheet } of apiCases) {

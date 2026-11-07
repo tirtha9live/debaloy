@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
+import { CELL_NOTE_MAX } from './format';
 
-export const BACKUP_VERSION = 2;
+export const BACKUP_VERSION = 4;
 export const MAX_BACKUP_BYTES = 2 * 1024 * 1024;
 
 export type RestoreMode = 'overwrite' | 'merge';
@@ -20,6 +21,9 @@ export type LedgerBackup = {
     login_events: unknown[];
     withdrawals: unknown[];
     ledger_years: unknown[];
+    e_receipt_mobiles: unknown[];
+    online_payments: unknown[];
+    flat_bank_accounts: unknown[];
   };
 };
 
@@ -43,10 +47,25 @@ export function backupFilename(date = new Date()) {
 
 export async function buildLedgerBackup(): Promise<LedgerBackup> {
   const database = db();
-  const [flats, maintenance, puja, categories, entries, settings, visitors, loginEvents, withdrawals, ledgerYears] =
-    await database.batch([
+  const [
+    flats,
+    maintenance,
+    puja,
+    categories,
+    entries,
+    settings,
+    visitors,
+    loginEvents,
+    withdrawals,
+    ledgerYears,
+    eReceiptMobiles,
+    onlinePayments,
+    flatBankAccounts,
+  ] = await database.batch([
       database.prepare('SELECT id, resident, sort_order FROM flats ORDER BY sort_order, id'),
-      database.prepare('SELECT flat_id, month, amount, mode FROM maintenance ORDER BY flat_id, month'),
+      database.prepare(
+        'SELECT flat_id, month, amount, mode, npr, note, paid_on FROM maintenance ORDER BY flat_id, month',
+      ),
       database.prepare('SELECT flat_id, year_id, amount FROM puja ORDER BY year_id, flat_id'),
       database.prepare(
         'SELECT id, kind, name, sort_order, is_builtin FROM categories ORDER BY kind, sort_order, id',
@@ -67,6 +86,16 @@ export async function buildLedgerBackup(): Promise<LedgerBackup> {
                 cash_in_hand, cash_in_bank, cash_in_hand_override, cash_in_bank_override, created_at
          FROM ledger_years ORDER BY start_date, id`,
       ),
+      database.prepare('SELECT flat_id, mobile, updated_at FROM e_receipt_mobiles ORDER BY flat_id'),
+      database.prepare(
+        `SELECT id, year_id, flat_id, payment_type, description, amount, link_account, status,
+                bank, account_holder, applied_month, submitted_at, approved_at
+         FROM online_payments ORDER BY id`,
+      ),
+      database.prepare(
+        `SELECT id, flat_id, bank, account_holder, auto_sync, last_used_at
+         FROM flat_bank_accounts ORDER BY flat_id, last_used_at DESC, id DESC`,
+      ),
     ]);
 
   return {
@@ -84,6 +113,9 @@ export async function buildLedgerBackup(): Promise<LedgerBackup> {
       login_events: loginEvents.results ?? [],
       withdrawals: withdrawals.results ?? [],
       ledger_years: ledgerYears.results ?? [],
+      e_receipt_mobiles: eReceiptMobiles.results ?? [],
+      online_payments: onlinePayments.results ?? [],
+      flat_bank_accounts: flatBankAccounts.results ?? [],
     },
   };
 }
@@ -159,6 +191,9 @@ export function parseLedgerBackup(raw: string): LedgerBackup {
       login_events: asList(tables.login_events),
       withdrawals: asList(tables.withdrawals),
       ledger_years: asList(tables.ledger_years),
+      e_receipt_mobiles: asList(tables.e_receipt_mobiles),
+      online_payments: asList(tables.online_payments),
+      flat_bank_accounts: asList(tables.flat_bank_accounts),
     },
   };
 }
@@ -192,6 +227,9 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
       database.prepare('DELETE FROM login_events'),
       database.prepare('DELETE FROM visitors'),
       database.prepare('DELETE FROM withdrawals'),
+      database.prepare('DELETE FROM online_payments'),
+      database.prepare('DELETE FROM flat_bank_accounts'),
+      database.prepare('DELETE FROM e_receipt_mobiles'),
       database.prepare('DELETE FROM entries'),
       database.prepare('DELETE FROM categories'),
       database.prepare('DELETE FROM maintenance'),
@@ -256,17 +294,24 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
     );
   }
 
+  const legacyZeroIsNpr = asInt(backup.version) < 4;
   for (const row of backup.tables.maintenance) {
     const item = asRecord(row);
     const flatId = asText(item?.flat_id, 16);
     const month = asText(item?.month, 16);
     if (!item || !flatId || !month) continue;
+    const amount = asOptionalAmount(item.amount);
+    const npr = asInt(item.npr) === 1 || (legacyZeroIsNpr && amount === 0);
+    const paid = !npr && amount != null && amount > 0;
+    const note = npr || paid ? asText(item.note, CELL_NOTE_MAX) || null : null;
+    const paidOn = paid ? asDate(item.paid_on) : null;
     statements.push(
       database
         .prepare(
-          `INSERT${conflict} INTO maintenance (flat_id, month, amount, mode) VALUES (?, ?, ?, ?)`,
+          `INSERT${conflict} INTO maintenance (flat_id, month, amount, mode, npr, note, paid_on)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(flatId, month, asOptionalAmount(item.amount), asMode(item.mode)),
+        .bind(flatId, month, npr ? null : amount, asMode(item.mode), npr ? 1 : 0, note, paidOn),
     );
   }
 
@@ -453,6 +498,116 @@ export async function restoreLedgerBackup(backup: LedgerBackup, mode: RestoreMod
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(at, outcome, role, ip, device, userAgent, fingerprint, sessionId),
+      );
+    }
+  }
+
+  for (const row of backup.tables.e_receipt_mobiles) {
+    const item = asRecord(row);
+    const flatId = asText(item?.flat_id, 16);
+    const mobile = asText(item?.mobile, 16).replace(/\D/g, '');
+    if (!item || !flatId || mobile.length !== 10) continue;
+    statements.push(
+      database
+        .prepare(
+          `INSERT${conflict} INTO e_receipt_mobiles (flat_id, mobile, updated_at) VALUES (?, ?, ?)`,
+        )
+        .bind(flatId, mobile, asText(item.updated_at, 40) || new Date().toISOString()),
+    );
+  }
+
+  for (const row of backup.tables.online_payments) {
+    const item = asRecord(row);
+    if (!item) continue;
+    const flatId = asText(item.flat_id, 16);
+    const paymentType = asText(item.payment_type, 16);
+    if (!flatId || !['maintenance', 'dues', 'others'].includes(paymentType)) continue;
+    const amount = asAmount(item.amount);
+    if (amount <= 0) continue;
+    const id = asInt(item.id);
+    const submittedAt = asText(item.submitted_at, 40) || new Date().toISOString();
+    const status = asText(item.status, 16) === 'approved' ? 'approved' : 'pending';
+    if (id > 0) {
+      statements.push(
+        database
+          .prepare(
+            `INSERT${conflict} INTO online_payments (
+               id, year_id, flat_id, payment_type, description, amount, link_account, status,
+               bank, account_holder, applied_month, submitted_at, approved_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            id,
+            asInt(item.year_id) || 1,
+            flatId,
+            paymentType,
+            asText(item.description, 240),
+            amount,
+            asInt(item.link_account) ? 1 : 0,
+            status,
+            asText(item.bank, 80),
+            asText(item.account_holder, 80),
+            asText(item.applied_month, 16) || null,
+            submittedAt,
+            asText(item.approved_at, 40) || null,
+          ),
+      );
+    } else if (!overwrite) {
+      statements.push(
+        database
+          .prepare(
+            `INSERT INTO online_payments (
+               year_id, flat_id, payment_type, description, amount, link_account, status,
+               bank, account_holder, applied_month, submitted_at, approved_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            asInt(item.year_id) || 1,
+            flatId,
+            paymentType,
+            asText(item.description, 240),
+            amount,
+            asInt(item.link_account) ? 1 : 0,
+            status,
+            asText(item.bank, 80),
+            asText(item.account_holder, 80),
+            asText(item.applied_month, 16) || null,
+            submittedAt,
+            asText(item.approved_at, 40) || null,
+          ),
+      );
+    }
+  }
+
+  for (const row of backup.tables.flat_bank_accounts) {
+    const item = asRecord(row);
+    const flatId = asText(item?.flat_id, 16);
+    const bank = asText(item?.bank, 80);
+    const holder = asText(item?.account_holder, 80);
+    if (!item || !flatId || !bank || !holder) continue;
+    const id = asInt(item.id);
+    const lastUsed = asText(item.last_used_at, 40) || new Date().toISOString();
+    if (id > 0) {
+      statements.push(
+        database
+          .prepare(
+            `INSERT${conflict} INTO flat_bank_accounts (
+               id, flat_id, bank, account_holder, auto_sync, last_used_at
+             ) VALUES (?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(id, flatId, bank, holder, asInt(item.auto_sync) ? 1 : 0, lastUsed),
+      );
+    } else if (!overwrite) {
+      statements.push(
+        database
+          .prepare(
+            `INSERT INTO flat_bank_accounts (flat_id, bank, account_holder, auto_sync, last_used_at)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(flat_id, bank, account_holder) DO UPDATE SET
+               auto_sync = CASE WHEN excluded.auto_sync = 1 THEN 1 ELSE flat_bank_accounts.auto_sync END,
+               last_used_at = excluded.last_used_at`,
+          )
+          .bind(flatId, bank, holder, asInt(item.auto_sync) ? 1 : 0, lastUsed),
       );
     }
   }

@@ -4,7 +4,7 @@ import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
 import ReceiptsPaymentsSheet from '../../components/ReceiptsPaymentsSheet.astro';
-import { ADDRESS, ASSOCIATION, HANDOVER_CLOSING_BANK, HANDOVER_CLOSING_CASH, HANDOVER_LINES, SHEETS } from '../../lib/constants';
+import { ADDRESS, ASSOCIATION, HANDOVER_CLOSING_BANK, HANDOVER_CLOSING_CASH, HANDOVER_LINES, isYearlessSheet, VISIBLE_SHEETS } from '../../lib/constants';
 import { withView } from '../../lib/auth';
 import { displayDate, formatAmount } from '../../lib/format';
 
@@ -13,7 +13,7 @@ const paymentTotal = HANDOVER_LINES.reduce((sum, line) => sum + (line.paymentAmo
 const frozen = (Astro.locals.ledgerYears ?? []).filter((year) => year.endDate);
 const canManage = Astro.locals.session?.role === 'admin' && !Astro.locals.viewAsResident;
 const viewAsResident = Astro.locals.viewAsResident;
-const snapshotSheets = SHEETS.filter((sheet) => sheet.slug !== 'handover' && sheet.slug !== 'years');
+const snapshotSheets = VISIBLE_SHEETS.filter((sheet) => !isYearlessSheet(sheet.slug));
 const error = Astro.url.searchParams.get('error');
 ---
 

@@ -409,6 +409,8 @@ export function displaySheet(sheet: string) {
     settings: 'This year’s account',
     withdrawals: 'Withdrawals',
     years: 'Years',
+    'e-receipts': 'E-Receipts',
+    payments: 'Online payments',
   };
   return map[sheet] ?? sheet;
 }

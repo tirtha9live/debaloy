@@ -6,6 +6,7 @@ import {
   HANDOVER_CLOSING_CASH,
   HANDOVER_LINES,
 } from './constants';
+import { maintenanceCellTip, NPR_LABEL } from './format';
 import {
   buildReceiptsPayments,
   categoryTotals,
@@ -146,7 +147,10 @@ function buildRawWorkbook(workbook: ExcelJS.Workbook, snapshot: LedgerSnapshot) 
     maintRows.push([
       row.flatId,
       row.resident,
-      ...snapshot.months.flatMap((month) => [money(row.months[month].amount), row.months[month].mode]),
+      ...snapshot.months.flatMap((month) => {
+        const cell = row.months[month];
+        return cell.npr ? [NPR_LABEL, ''] : [money(cell.amount), cell.mode];
+      }),
       money(row.totalBank),
       money(row.totalCash),
       money(row.total),
@@ -339,7 +343,7 @@ function buildFormattedMaintenance(workbook: ExcelJS.Workbook, snapshot: LedgerS
   ws.getCell('A2').alignment = { horizontal: 'center' };
   ws.mergeCells(3, 1, 3, lastCol);
   ws.getCell('A3').value =
-    'Enter amount and select mode (Bank/Cash) for each month. Mode defaults to Cash. Blank = not recorded. 0 = payment not required (paid in advance, or paid some operating expenses for the society, etc.).';
+    'Enter amount and select mode (Bank/Cash) for each month. Mode defaults to Cash. Blank or 0 = not paid. NPR = no payment required (paid in advance, or paid as dues at a later date; amount recorded in the month received).';
   ws.getCell('A3').font = font({ size: 9, italic: true, color: { argb: SUBTEXT } });
   ws.getCell('A3').alignment = { horizontal: 'center' };
 
@@ -383,9 +387,12 @@ function buildFormattedMaintenance(workbook: ExcelJS.Workbook, snapshot: LedgerS
       const amountCol = 3 + monthIndex * 2;
       const modeCol = amountCol + 1;
       const cell = row.months[month];
-      dataCell(ws.getCell(excelRow, amountCol), cell.amount ?? null);
+      dataCell(ws.getCell(excelRow, amountCol), cell.npr ? NPR_LABEL : (cell.amount ?? null));
+      if (cell.npr) ws.getCell(excelRow, amountCol).alignment = { horizontal: 'center', vertical: 'middle' };
+      const tip = maintenanceCellTip(cell);
+      if (tip) ws.getCell(excelRow, amountCol).note = tip;
       const mode = ws.getCell(excelRow, modeCol);
-      mode.value = cell.mode;
+      mode.value = cell.npr ? '' : cell.mode;
       mode.font = font({ size: 10, color: { argb: BLUE_TEXT } });
       mode.fill = fill(CREAM);
       mode.border = box;

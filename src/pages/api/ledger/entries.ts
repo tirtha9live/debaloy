@@ -4,6 +4,7 @@ import type { CategoryKind, PayMode } from '../../../lib/constants';
 import { parseAmount } from '../../../lib/format';
 import { readFormIntent } from '../../../lib/form-intent';
 import { createEntry, deleteEntry, updateEntry } from '../../../lib/ledger';
+import { deleteReceiptForEntry } from '../../../lib/receipts';
 import {
   auditEntryDelete,
   auditEntryUpdate,
@@ -33,6 +34,7 @@ export const POST: APIRoute = async ({ request, locals, redirect }) => {
     if (Number.isInteger(id)) {
       const audit = session ? await auditEntryDelete(session, request, year, kind, id) : [];
       await deleteEntry(id, kind);
+      if (kind === 'expense') await deleteReceiptForEntry(id);
       if (session) await publishLedgerAudit(session, request, 'entries', audit);
     }
     return redirect(sameOriginPath(request, fallback));

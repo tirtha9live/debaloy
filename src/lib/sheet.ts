@@ -1,18 +1,23 @@
-import { monthKeyFromIso, todayIso } from './years';
+import { monthKeyFromIso, monthStartIso, todayIso } from './years';
 
 export function ledgerCurrentMonthKey(): string {
   return monthKeyFromIso(todayIso());
 }
 
-/** Blank amount in the current ledger month — payment not yet recorded. */
+/** Blank or 0 in the current month or any earlier month — not paid. NPR is never pending. */
 export function isMaintenancePaymentPending(
   monthKey: string,
-  amount: number | null,
+  cell: { amount: number | null; npr: boolean },
   activeMonths: readonly string[],
+  currentMonthKey: string = ledgerCurrentMonthKey(),
 ): boolean {
-  if (amount != null) return false;
+  if (cell.npr) return false;
+  if (cell.amount != null && cell.amount !== 0) return false;
   if (!activeMonths.includes(monthKey)) return false;
-  return monthKey === ledgerCurrentMonthKey();
+  const month = monthStartIso(monthKey);
+  const current = monthStartIso(currentMonthKey);
+  if (!month || !current) return false;
+  return month <= current;
 }
 
 /** Puja contribution not yet recorded (empty or zero). */

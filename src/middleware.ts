@@ -1,6 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { readSession } from './lib/auth';
 import { recordPageView, touchVisitor } from './lib/activity';
+import { isDisabledLedgerPath } from './lib/constants';
 import { isMaintenanceMode } from './lib/debug';
 import { listYears, resolveYear } from './lib/years';
 
@@ -15,6 +16,7 @@ const PUBLIC_PREFIXES = [
 
 function isPublicPath(pathname: string) {
   if (pathname === '/') return true;
+  if (pathname.startsWith('/festival-img/')) return true;
   return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}.`));
 }
 
@@ -59,6 +61,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
   context.locals.canEdit = session.role === 'admin' && !viewAsResident && selected.endDate == null;
 
   if (context.url.pathname === '/ledger/activity' && !(session.role === 'admin' && !viewAsResident)) {
+    return context.redirect(viewAsResident ? '/ledger?view=resident' : '/ledger');
+  }
+
+  if (isDisabledLedgerPath(context.url.pathname)) {
+    if (context.url.pathname.startsWith('/api/')) {
+      return new Response('Not found', { status: 404 });
+    }
     return context.redirect(viewAsResident ? '/ledger?view=resident' : '/ledger');
   }
 

@@ -36,6 +36,8 @@ import {
 
 } from '../../lib/activity';
 
+import { currentKolkataYear, listJobRuns } from '../../lib/bank-holidays';
+
 
 
 if (!Astro.locals.canEdit) {
@@ -55,6 +57,44 @@ const pageTrail = await listRecentPageViews();
 const audits = await listLedgerAudit();
 
 const events = await listLoginEvents();
+
+const jobRuns = await listJobRuns(30);
+
+const jobYear = currentKolkataYear();
+
+const jobAction = Astro.url.searchParams.get('job') ?? '';
+
+const jobResult = Astro.url.searchParams.get('result') ?? '';
+
+const jobActions = [
+  {
+    intent: 'all',
+    label: 'Fetch all + consolidate',
+    title: `Fetch bank holidays and festival dates for ${jobYear}, then consolidate?`,
+    copy: 'Same as the 1 January 10:30 run: HDFC and Drik Panchang are fetched together, then the festival calendar is rebuilt.',
+    primary: true,
+  },
+  {
+    intent: 'bank',
+    label: 'Fetch bank holidays',
+    title: `Fetch ${jobYear} bank holidays now?`,
+    copy: 'Reads the West Bengal list from HDFC Bank, replaces the saved list if it is complete, then rebuilds the festival calendar.',
+  },
+  {
+    intent: 'drik',
+    label: 'Fetch festival dates',
+    title: `Fetch ${jobYear} festival dates now?`,
+    copy: 'Reads the Kolkata festival dates from Drik Panchang, replaces the saved dates if complete, then rebuilds the festival calendar.',
+  },
+  {
+    intent: 'consolidate',
+    label: 'Consolidate calendar',
+    title: `Rebuild the ${jobYear} festival calendar?`,
+    copy: 'Merges the fixed dates with the saved bank list and Drik dates, without fetching anything.',
+  },
+];
+
+const jobLabel = (intent: string) => jobActions.find((item) => item.intent === intent)?.label ?? 'Job';
 
 
 
@@ -83,6 +123,8 @@ function pathLabel(path: string) {
     '/ledger/handover': 'Archive',
 
     '/ledger/activity': 'Activity',
+
+    '/ledger/bank-holidays': 'Bank holidays',
 
   };
 
@@ -113,6 +155,110 @@ function pathLabel(path: string) {
 
 
     <div id="sheet-capture" class="mt-8 space-y-10">
+
+      <section>
+        <h2 class="text-lg font-semibold tracking-tight" id="background-jobs">Background jobs</h2>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">
+          On 1 January at 10:30 IST bank holidays (HDFC) and festival dates (Drik Panchang, Kolkata) are fetched together and consolidated into the year’s festival calendar; at 18:00 IST whichever failed is fetched again and the calendar is consolidated again. Use the buttons below to force any step; every run is logged here. Festival photos refresh from Pexels once a year, the first time a festival’s window opens; on failure the cached photos stay.
+        </p>
+        <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
+          {jobActions.map((action) => (
+            <form
+              method="post"
+              action="/api/ledger/calendar-jobs"
+              data-ledger-form
+              data-confirm-action
+              data-confirm-title={action.title}
+              data-confirm-copy={action.copy}
+              data-confirm-label={action.label}
+              data-confirm-rows={JSON.stringify([{ label: 'Year', from: '—', to: String(jobYear) }])}
+            >
+              <button
+                type="submit"
+                name="intent"
+                value={action.intent}
+                class:list={[
+                  'inline-flex h-11 w-full items-center justify-center rounded-md px-4 text-sm font-medium lg:w-auto',
+                  action.primary
+                    ? 'bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950'
+                    : 'border border-hairline dark:border-slate-700',
+                ]}
+              >
+                {action.label}
+              </button>
+            </form>
+          ))}
+        </div>
+        {jobAction && jobResult === 'ok' && (
+          <p class="mt-3 rounded-md bg-canvas-soft px-3 py-2 text-sm text-body dark:bg-slate-800 dark:text-slate-300" role="status">
+            {jobLabel(jobAction)} finished. See the log below.
+          </p>
+        )}
+        {jobAction && jobResult === 'failed' && (
+          <p class="mt-3 rounded-md bg-error-soft px-3 py-2 text-sm text-error-deep dark:bg-red-950/40 dark:text-red-200" role="alert">
+            {jobLabel(jobAction)} failed. The reason is in the log below.
+          </p>
+        )}
+        {jobAction && jobResult === 'wait' && (
+          <p class="mt-3 rounded-md bg-canvas-soft px-3 py-2 text-sm text-body dark:bg-slate-800 dark:text-slate-300" role="status">
+            {jobLabel(jobAction)} ran less than a minute ago. Try again shortly.
+          </p>
+        )}
+        {!jobResult && ['bank_holidays', 'drik_festivals'].some((job) => jobRuns.find((run) => run.job === job && run.status !== 'skipped')?.status === 'failed') && (
+          <p class="mt-3 rounded-md bg-error-soft px-3 py-2 text-sm text-error-deep dark:bg-red-950/40 dark:text-red-200" role="alert">
+            The latest bank holiday or festival date fetch failed. Use the buttons above to fetch again, or check the source page.
+          </p>
+        )}
+        <div class="card-elevate mt-3 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+          <div class="sheet-scroll">
+            <table class="sheet-table w-full">
+              <thead>
+                <tr>
+                  <th class="text-left">When</th>
+                  <th class="text-left">Job</th>
+                  <th class="text-left">Trigger</th>
+                  <th class="text-left">Result</th>
+                  <th class="text-left">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobRuns.length === 0 && (
+                  <tr>
+                    <td colspan="5" class="whitespace-normal text-body dark:text-slate-300">No job runs yet.</td>
+                  </tr>
+                )}
+                {jobRuns.map((run) => (
+                  <tr>
+                    <td class="whitespace-nowrap">{formatDateTime(run.at)}</td>
+                    <td>
+                      {run.job === 'festival_images'
+                        ? 'Festival photos'
+                        : run.job === 'drik_festivals'
+                          ? 'Festival dates'
+                          : run.job === 'festival_calendar'
+                            ? 'Festival calendar'
+                            : 'Bank holidays'}
+                    </td>
+                    <td>
+                      {run.trigger === 'cron'
+                        ? '1 Jan 10:30'
+                        : run.trigger === 'retry'
+                          ? '1 Jan 18:00 retry'
+                          : run.trigger === 'auto'
+                            ? (run.job === 'festival_images' ? 'Festival window' : 'List missing')
+                            : 'Manual (treasurer)'}
+                    </td>
+                    <td class:list={[run.status === 'failed' && 'font-medium text-error']}>
+                      {run.status === 'ok' ? 'OK' : run.status === 'failed' ? 'Failed' : 'Skipped'}
+                    </td>
+                    <td class="max-w-md whitespace-normal">{run.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
 
       <section>
 

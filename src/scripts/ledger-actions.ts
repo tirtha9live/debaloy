@@ -1,4 +1,11 @@
-import { displayDate, formatAmount, parseAmount } from '../lib/format';
+import { displayDate, formatAmount, isNprInput, NPR_LABEL, parseAmount, parseOptionalAmount } from '../lib/format';
+import {
+  formatBytes,
+  RECEIPT_IMAGE_MAX_BYTES,
+  RECEIPT_IMAGE_MAX_EDGE,
+  RECEIPT_IMAGE_TARGET_BYTES,
+  RECEIPT_PDF_MAX_BYTES,
+} from '../lib/receipt-limits';
 
 const toggle = document.getElementById('download-toggle') as HTMLButtonElement | null;
 const panel = document.getElementById('download-panel');
@@ -214,10 +221,20 @@ function isMoneyField(field: LedgerField) {
 }
 
 function savedValue(field: LedgerField) {
+  if (field instanceof HTMLInputElement && field.type === 'checkbox') {
+    return field.defaultChecked ? '1' : '';
+  }
   if (field instanceof HTMLSelectElement) {
     return [...field.options].find((option) => option.defaultSelected)?.value ?? field.options[0]?.value ?? '';
   }
   return field.defaultValue;
+}
+
+function currentValue(field: LedgerField) {
+  if (field instanceof HTMLInputElement && field.type === 'checkbox') {
+    return field.checked ? field.value || '1' : '';
+  }
+  return field.value;
 }
 
 function fieldLabel(field: LedgerField) {
@@ -233,11 +250,19 @@ function fieldLabel(field: LedgerField) {
 }
 
 function displayValue(field: LedgerField, value: string) {
+  if (field instanceof HTMLInputElement && field.type === 'checkbox') {
+    return value ? 'Yes' : 'No';
+  }
   if (field instanceof HTMLInputElement && field.type === 'date') {
     return displayDate(value || null);
   }
+  if (field.name === 'mobile' && value.trim()) {
+    const digits = value.replace(/\D/g, '');
+    return digits.length === 10 ? `+91-${digits}` : value.trim();
+  }
   if (isMoneyField(field)) {
     if (!value.trim()) return '—';
+    if (field.name.startsWith('amount:') && isNprInput(value)) return NPR_LABEL;
     return formatAmount(parseAmount(value));
   }
   const text = value.trim();
@@ -249,6 +274,9 @@ function valuesMatch(field: LedgerField, previous: string, next: string) {
     const prevEmpty = !previous.trim();
     const nextEmpty = !next.trim();
     if (prevEmpty || nextEmpty) return prevEmpty && nextEmpty;
+    const prevNpr = isNprInput(previous);
+    const nextNpr = isNprInput(next);
+    if (prevNpr || nextNpr) return prevNpr && nextNpr;
     return parseAmount(previous) === parseAmount(next);
   }
   if (isMoneyField(field)) return parseAmount(previous) === parseAmount(next);
@@ -261,19 +289,156 @@ function collectChanges(form: HTMLFormElement, listAll: boolean) {
   const fields = [...form.querySelectorAll<LedgerField>('input, select, textarea')];
   for (const field of fields) {
     if (field instanceof HTMLInputElement && (field.type === 'hidden' || field.type === 'submit')) continue;
-    if (field.disabled) continue;
+    if (field.disabled && field.dataset.confirmInclude !== '1') continue;
     const previous = savedValue(field);
-    const next = field.value;
-    if (!listAll && valuesMatch(field, previous, next)) continue;
+    const next = currentValue(field);
+    const includeAlways = field.dataset.confirmInclude === '1';
+    if (field.hasAttribute('data-npr-mode') && (previous === NPR_LABEL || next === NPR_LABEL)) continue;
+    if (!listAll && !includeAlways && valuesMatch(field, previous, next)) continue;
     if (listAll && field.name === 'new_name' && !next.trim()) continue;
     rows.push({
       label: fieldLabel(field),
-      from: listAll ? '—' : displayValue(field, previous),
+      from: listAll || includeAlways ? (valuesMatch(field, previous, next) ? '—' : displayValue(field, previous)) : displayValue(field, previous),
       to: displayValue(field, next),
     });
   }
   return rows;
 }
+
+function registeredExisting(form: HTMLFormElement) {
+  const raw = form.dataset.registeredFlats;
+  if (!raw) return null;
+  try {
+    const map = JSON.parse(raw) as Record<string, string>;
+    const flatId = String(new FormData(form).get('flat_id') ?? '').trim();
+    return map[flatId] || null;
+  } catch {
+    return null;
+  }
+}
+
+function bindFlatPickers() {
+  document.querySelectorAll<HTMLSelectElement>('[data-flat-picker]').forEach((select) => {
+    const sourceId = select.dataset.flatPicker;
+    const source = sourceId ? document.getElementById(sourceId) : null;
+    if (!source) return;
+    let flats: Array<{ id: string; resident: string; last4?: string | null }> = [];
+    try {
+      flats = JSON.parse(source.textContent || '[]') as typeof flats;
+    } catch {
+      return;
+    }
+    const form = select.form;
+    const nameField = form?.querySelector<HTMLInputElement>('[data-fill-resident]');
+    const mobileField = form?.querySelector<HTMLInputElement>('[data-fill-mobile]');
+    const sync = () => {
+      const flat = flats.find((item) => item.id === select.value);
+      if (nameField) nameField.value = flat?.resident ?? '';
+      if (mobileField) {
+        const last4 = flat?.last4 ?? '';
+        mobileField.value = last4 ? `•••• ${last4}` : '—';
+      }
+    };
+    select.addEventListener('change', sync);
+    sync();
+  });
+}
+
+bindFlatPickers();
+
+function todayInKolkata() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+function bindMaintenanceCells() {
+  document.querySelectorAll<HTMLInputElement>('input[data-cell-amount]').forEach((amount) => {
+    const sibling = (prefix: string) =>
+      amount.form?.querySelector<HTMLInputElement | HTMLSelectElement>(
+        `[name="${CSS.escape(amount.name.replace(/^amount:/, prefix))}"]`,
+      ) ?? null;
+    const select = sibling('mode:') as HTMLSelectElement | null;
+    const date = sibling('paid:') as HTMLInputElement | null;
+    const note = sibling('note:') as HTMLInputElement | null;
+    let lastMode = !select || select.value === NPR_LABEL ? 'Cash' : select.value;
+
+    select?.addEventListener('change', () => {
+      if (select.value === NPR_LABEL) {
+        amount.value = NPR_LABEL;
+      } else {
+        lastMode = select.value;
+        if (isNprInput(amount.value)) amount.value = '';
+      }
+      amount.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    amount.addEventListener('input', () => {
+      const npr = isNprInput(amount.value);
+      const paid = !npr && (parseOptionalAmount(amount.value) ?? 0) > 0;
+      if (select) {
+        if (npr) {
+          if (select.value !== NPR_LABEL) select.value = NPR_LABEL;
+        } else if (select.value === NPR_LABEL) {
+          select.value = lastMode;
+        }
+      }
+      if (date) {
+        date.hidden = !paid;
+        if (paid && !date.value) {
+          date.value = todayInKolkata();
+          date.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }
+      if (note) {
+        note.hidden = !npr && !paid;
+        note.placeholder = npr ? 'Why NPR?' : 'Note, e.g. why more or less';
+      }
+    });
+  });
+}
+
+bindMaintenanceCells();
+
+function bindCellTooltips() {
+  const triggers = document.querySelectorAll<HTMLElement>('[data-cell-tip]');
+  if (!triggers.length) return;
+  const tip = document.createElement('div');
+  tip.className = 'cell-tooltip';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  document.body.append(tip);
+  let active: HTMLElement | null = null;
+
+  const hide = () => {
+    tip.hidden = true;
+    active = null;
+  };
+  const show = (trigger: HTMLElement) => {
+    active = trigger;
+    tip.textContent = trigger.dataset.cellTip ?? '';
+    tip.hidden = false;
+    const box = trigger.getBoundingClientRect();
+    const width = tip.offsetWidth;
+    const left = Math.min(Math.max(8, box.left + box.width / 2 - width / 2), window.innerWidth - width - 8);
+    const above = box.top - tip.offsetHeight - 8;
+    tip.style.left = `${left}px`;
+    tip.style.top = `${above >= 8 ? above : box.bottom + 8}px`;
+  };
+
+  triggers.forEach((trigger) => {
+    trigger.removeAttribute('title');
+    trigger.addEventListener('mouseenter', () => show(trigger));
+    trigger.addEventListener('mouseleave', hide);
+    trigger.addEventListener('focus', () => show(trigger));
+    trigger.addEventListener('blur', hide);
+    trigger.addEventListener('click', () => (active === trigger && !tip.hidden ? hide() : show(trigger)));
+  });
+  document.addEventListener('scroll', hide, true);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') hide();
+  });
+}
+
+bindCellTooltips();
 
 function intentOf(form: HTMLFormElement, submitter: HTMLElement | null) {
   if (submitter instanceof HTMLButtonElement && submitter.name === 'intent') return submitter.value;
@@ -385,6 +550,7 @@ ledgerForms.forEach((form) => {
         ? event.submitter
         : null;
     const intent = intentOf(form, submitter);
+    const overwriteLast4 = registeredExisting(form);
     const go = () => {
       form.dataset.confirmed = '1';
       const hiddenIntent = form.querySelector<HTMLInputElement>('input[name="intent"][type="hidden"]');
@@ -445,12 +611,51 @@ ledgerForms.forEach((form) => {
     }
 
     const rows = collectChanges(form, intent === 'create');
+    if (overwriteLast4) {
+      const mobileRow = rows.find((row) => /mobile/i.test(row.label));
+      if (mobileRow) mobileRow.from = `•••• ${overwriteLast4}`;
+    }
+    const customTitle = overwriteLast4
+      ? form.dataset.overwriteTitle || 'Replace this mobile number?'
+      : form.dataset.confirmTitle;
+    const customCopy = overwriteLast4
+      ? form.dataset.overwriteCopy || 'This overwrites the number already registered for this flat.'
+      : form.dataset.confirmCopy;
+
     if (intent === 'create') {
       openConfirm({
-        title: 'Add this row?',
-        copy: 'Check the amount. An extra zero is saved as a much larger figure.',
+        title: customTitle || 'Add this row?',
+        copy: customCopy || 'Check the amount. An extra zero is saved as a much larger figure.',
         rows,
-        confirmLabel: 'Confirm add',
+        confirmLabel: form.dataset.confirmLabel || 'Confirm add',
+        onConfirm: () => go(),
+      });
+      return;
+    }
+
+    if (intent === 'approve') {
+      openConfirm({
+        title: customTitle || 'Approve this payment?',
+        copy: customCopy || 'This records the bank details and updates the ledger.',
+        rows,
+        confirmLabel: form.dataset.confirmLabel || 'Confirm approve',
+        onConfirm: () => go(),
+      });
+      return;
+    }
+
+    if (form.hasAttribute('data-confirm-action')) {
+      let actionRows: ChangeRow[] = [];
+      try {
+        actionRows = JSON.parse(form.dataset.confirmRows || '[]') as ChangeRow[];
+      } catch {
+        actionRows = [];
+      }
+      openConfirm({
+        title: customTitle || 'Continue?',
+        copy: customCopy || '',
+        rows: actionRows,
+        confirmLabel: form.dataset.confirmLabel || 'Confirm',
         onConfirm: () => go(),
       });
       return;
@@ -468,10 +673,10 @@ ledgerForms.forEach((form) => {
     }
 
     openConfirm({
-      title: rows.length === 1 ? 'Confirm this update?' : `Confirm these ${rows.length} updates?`,
-      copy: 'Nothing is saved until you confirm. Watch for an extra zero.',
+      title: customTitle || (rows.length === 1 ? 'Confirm this update?' : `Confirm these ${rows.length} updates?`),
+      copy: customCopy || 'Nothing is saved until you confirm. Watch for an extra zero.',
       rows,
-      confirmLabel: 'Confirm save',
+      confirmLabel: form.dataset.confirmLabel || 'Confirm save',
       onConfirm: () => go(),
     });
   });
@@ -524,3 +729,266 @@ function syncRpInputs() {
 
 syncRpInputs();
 window.matchMedia('(min-width: 1024px)').addEventListener('change', syncRpInputs);
+
+async function decodeImage(file: File): Promise<{ source: CanvasImageSource; width: number; height: number }> {
+  if ('createImageBitmap' in window) {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height };
+    } catch {
+      // fall through to <img> decoding
+    }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return { source: image, width: image.naturalWidth, height: image.naturalHeight };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Shrinks photos to a receipt-friendly JPEG; PDFs pass through if small enough. */
+async function prepareReceipt(file: File): Promise<File> {
+  const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+  if (isPdf) {
+    if (file.size > RECEIPT_PDF_MAX_BYTES) {
+      throw new Error(`This PDF is ${formatBytes(file.size)}. PDFs must be 4 MB or less; scan at a lower quality or upload a photo.`);
+    }
+    return file;
+  }
+  let decoded;
+  try {
+    decoded = await decodeImage(file);
+  } catch {
+    throw new Error('This file could not be read. Choose a JPG, PNG, WebP photo or a PDF.');
+  }
+  const scale = Math.min(1, RECEIPT_IMAGE_MAX_EDGE / Math.max(decoded.width, decoded.height));
+  const keep = scale === 1 && file.size <= RECEIPT_IMAGE_TARGET_BYTES && /^image\/(jpeg|png|webp)$/.test(file.type);
+  if (keep) return file;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(decoded.width * scale);
+  canvas.height = Math.round(decoded.height * scale);
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('This browser cannot compress photos. Try another browser.');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(decoded.source, 0, 0, canvas.width, canvas.height);
+
+  let blob: Blob | null = null;
+  for (const quality of [0.85, 0.75, 0.65, 0.55, 0.45]) {
+    blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (blob && blob.size <= RECEIPT_IMAGE_TARGET_BYTES) break;
+  }
+  if (!blob || blob.size > RECEIPT_IMAGE_MAX_BYTES) {
+    throw new Error('This photo is still too large after compression. Try a closer, simpler photo of the bill.');
+  }
+  const name = `${file.name.replace(/\.[^.]+$/, '') || 'receipt'}.jpg`;
+  return new File([blob], name, { type: 'image/jpeg' });
+}
+
+function bindReceiptForms() {
+  document.querySelectorAll<HTMLFormElement>('form[data-receipt-form]').forEach((form) => {
+    const input = form.querySelector<HTMLInputElement>('[data-receipt-input]');
+    const status = form.querySelector<HTMLElement>('[data-receipt-status]');
+    form.querySelector<HTMLElement>('[data-receipt-submit]')?.setAttribute('hidden', '');
+    if (!input) return;
+
+    input.addEventListener('change', async () => {
+      const picked = input.files?.[0];
+      if (!picked) return;
+      if (status) status.textContent = 'Preparing…';
+      let file: File;
+      try {
+        file = await prepareReceipt(picked);
+      } catch (error) {
+        if (status) status.textContent = '';
+        input.value = '';
+        openConfirm({
+          title: 'Cannot use this file',
+          copy: error instanceof Error ? error.message : 'Choose another file.',
+          rows: [],
+          confirmLabel: 'OK',
+          onConfirm: () => undefined,
+        });
+        return;
+      }
+      if (status) status.textContent = '';
+      const existing = form.dataset.receiptExisting || '';
+      const compressed = file !== picked ? ` · compressed from ${formatBytes(picked.size)}` : '';
+      openConfirm({
+        title: existing ? 'Replace this receipt?' : 'Attach this receipt?',
+        copy: 'Residents can open it from the Expenses sheet.',
+        rows: [
+          {
+            label: `${form.dataset.receiptLabel ?? 'Expense'} · receipt`,
+            from: existing || '—',
+            to: `${file.name} (${formatBytes(file.size)}${compressed})`,
+          },
+        ],
+        confirmLabel: 'Confirm upload',
+        onConfirm: async () => {
+          if (status) status.textContent = 'Uploading…';
+          const body = new FormData(form);
+          body.set('receipt', file, file.name);
+          try {
+            const response = await fetch(form.action, { method: 'POST', body, credentials: 'same-origin' });
+            window.location.assign(response.url || window.location.href);
+          } catch {
+            if (status) status.textContent = 'Upload failed. Check your connection and try again.';
+          }
+        },
+      });
+      input.value = '';
+    });
+  });
+
+  document.querySelectorAll<HTMLFormElement>('form[data-receipt-delete]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      if (form.dataset.confirmed === '1') return;
+      event.preventDefault();
+      const bar = form.closest('.receipt-bar');
+      const upload = bar?.querySelector<HTMLFormElement>('form[data-receipt-form]');
+      openConfirm({
+        title: 'Remove this receipt?',
+        copy: 'The file is deleted. Residents will no longer see it.',
+        rows: [
+          {
+            label: `${upload?.dataset.receiptLabel ?? 'Expense'} · receipt`,
+            from: upload?.dataset.receiptExisting || 'Receipt',
+            to: 'removed',
+          },
+        ],
+        confirmLabel: 'Confirm remove',
+        danger: true,
+        onConfirm: () => {
+          form.dataset.confirmed = '1';
+          const button = form.querySelector<HTMLButtonElement>('button[name="intent"]');
+          form.requestSubmit(button ?? undefined);
+        },
+      });
+    });
+  });
+}
+
+bindReceiptForms();
+
+function bindReceiptViewer() {
+  const links = document.querySelectorAll<HTMLAnchorElement>('a[data-receipt-view]');
+  if (!links.length) return;
+
+  const root = document.createElement('div');
+  root.className = 'receipt-viewer';
+  root.hidden = true;
+  root.innerHTML = `
+    <div class="receipt-viewer-backdrop" data-viewer-close></div>
+    <div class="receipt-viewer-panel" role="dialog" aria-modal="true" aria-labelledby="receipt-viewer-title">
+      <div class="receipt-viewer-bar">
+        <p class="receipt-viewer-title" id="receipt-viewer-title"></p>
+        <a class="receipt-viewer-open" target="_blank" rel="noopener">Open in new tab</a>
+        <button type="button" class="receipt-viewer-close" data-viewer-close aria-label="Close receipt">
+          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path stroke-linecap="round" d="M5 5l10 10M15 5L5 15" />
+          </svg>
+        </button>
+      </div>
+      <div class="receipt-viewer-body"></div>
+    </div>`;
+  document.body.append(root);
+
+  const panel = root.querySelector<HTMLElement>('.receipt-viewer-panel')!;
+  const body = root.querySelector<HTMLElement>('.receipt-viewer-body')!;
+  const titleEl = root.querySelector<HTMLElement>('.receipt-viewer-title')!;
+  const openTab = root.querySelector<HTMLAnchorElement>('.receipt-viewer-open')!;
+  const closeButton = root.querySelector<HTMLButtonElement>('.receipt-viewer-close')!;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let opener: HTMLAnchorElement | null = null;
+  let closing = false;
+
+  const originFrom = (link: HTMLElement) => {
+    const box = link.getBoundingClientRect();
+    const left = (window.innerWidth - panel.offsetWidth) / 2;
+    const top = (window.innerHeight - panel.offsetHeight) / 2;
+    const x = box.left + box.width / 2 - left;
+    const y = box.top + box.height / 2 - top;
+    panel.style.transformOrigin = `${x}px ${y}px`;
+  };
+
+  const open = (link: HTMLAnchorElement) => {
+    opener = link;
+    closing = false;
+    const type = link.dataset.receiptView ?? '';
+    titleEl.textContent = link.dataset.receiptTitle || 'Receipt';
+    openTab.href = link.href;
+    body.replaceChildren();
+    if (type === 'application/pdf') {
+      const frame = document.createElement('iframe');
+      frame.src = link.href;
+      frame.title = titleEl.textContent;
+      frame.className = 'receipt-viewer-pdf';
+      body.append(frame);
+    } else {
+      const image = document.createElement('img');
+      image.src = link.href;
+      image.alt = `Receipt: ${titleEl.textContent}`;
+      image.className = 'receipt-viewer-image';
+      body.append(image);
+    }
+    root.hidden = false;
+    document.body.classList.add('overflow-hidden');
+    originFrom(link);
+    requestAnimationFrame(() => root.classList.add('is-open'));
+    closeButton.focus({ preventScroll: true });
+  };
+
+  const finishClose = () => {
+    root.hidden = true;
+    body.replaceChildren();
+    document.body.classList.remove('overflow-hidden');
+    opener?.focus({ preventScroll: true });
+    opener = null;
+    closing = false;
+  };
+
+  const close = () => {
+    if (root.hidden || closing) return;
+    closing = true;
+    if (opener) originFrom(opener);
+    root.classList.remove('is-open');
+    if (reducedMotion.matches) {
+      finishClose();
+      return;
+    }
+    panel.addEventListener('transitionend', finishClose, { once: true });
+    window.setTimeout(() => closing && finishClose(), 400);
+  };
+
+  links.forEach((link) => {
+    link.addEventListener('click', (event) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      open(link);
+    });
+  });
+  root.querySelectorAll('[data-viewer-close]').forEach((el) => el.addEventListener('click', close));
+  document.addEventListener('keydown', (event) => {
+    if (root.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      close();
+      return;
+    }
+    if (event.key === 'Tab') {
+      const focusables = [openTab, closeButton];
+      const index = focusables.indexOf(document.activeElement as HTMLAnchorElement & HTMLButtonElement);
+      event.preventDefault();
+      const next = event.shiftKey ? (index <= 0 ? focusables.length - 1 : index - 1) : (index + 1) % focusables.length;
+      focusables[next].focus();
+    }
+  });
+}
+
+bindReceiptViewer();

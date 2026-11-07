@@ -5,6 +5,7 @@ const INTENT_PRIORITY = [
   'refetch_cash_in_bank',
   'update_end',
   'close',
+  'approve',
   'update',
   'create',
   'save',

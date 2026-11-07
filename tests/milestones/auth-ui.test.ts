@@ -31,5 +31,8 @@ describe('login and resident UI milestones', () => {
     expect(page).toMatch(/sheet-sticky-resident/);
     expect(page).toMatch(/>Resident</);
     expect(page).not.toMatch(/>Owner</);
+    expect(page).toMatch(/const showMode/);
+    expect(page).toMatch(/viewAsResident/);
+    expect(page).toMatch(/showMode && <th rowspan="2">Total/);
   });
 });

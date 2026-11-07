@@ -1,6 +1,6 @@
 ---
 import ThemeToggle from './ThemeToggle.astro';
-import { ASSOCIATION, SHEETS } from '../lib/constants';
+import { ASSOCIATION, isYearlessSheet, VISIBLE_SHEETS } from '../lib/constants';
 import { withLedger, withView } from '../lib/auth';
 import { formatUpdatedOn } from '../lib/format';
 import { getLastUpdatedAt } from '../lib/ledger';
@@ -69,11 +69,11 @@ const lastUpdatedLabel = session ? formatUpdatedOn(await getLastUpdatedAt()) : n
   {session && (
     <nav id="sheet-navigation" class="hidden border-t border-hairline dark:border-slate-800 lg:block" aria-label="Ledger sheets">
       <div class="mx-auto flex max-h-[70vh] max-w-[1400px] flex-col gap-1 overflow-y-auto px-4 py-2 sm:px-6 lg:max-h-none lg:flex-row lg:overflow-x-auto lg:overflow-y-visible">
-        {SHEETS.map((sheet) => {
+        {VISIBLE_SHEETS.map((sheet) => {
           const active = current === sheet.slug;
           return (
             <a
-              href={sheet.slug === 'handover' || sheet.slug === 'years' ? withView(sheet.href, viewAsResident) : withLedger(sheet.href, Astro.locals)}
+              href={isYearlessSheet(sheet.slug) ? withView(sheet.href, viewAsResident) : withLedger(sheet.href, Astro.locals)}
               class:list={[
                 'flex min-h-11 items-center whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-colors duration-200',
                 active

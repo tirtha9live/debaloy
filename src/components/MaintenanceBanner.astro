@@ -15,11 +15,10 @@ const { compact = true } = Astro.props;
 >
   {
     compact ? (
-      <p>Some features may be unavailable while we finish updates. If something fails, try again shortly.</p>
+      <p>Site in maintenance mode — some features may be unavailable.</p>
     ) : (
       <p>
-        <span class="font-medium">Site in maintenance mode.</span> Please check back after some time. You can still sign in
-        if you have the password, but some features may be unavailable.
+        <span class="font-medium">Site in maintenance mode.</span> Please try again later. Sign-in is still available.
       </p>
     )
   }

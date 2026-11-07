@@ -1,0 +1,189 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import { ASSOCIATION, FLATS } from '../../lib/constants';
+import { withView } from '../../lib/auth';
+import { formatMobileLast4, listFlatMobiles } from '../../lib/mobiles';
+
+const session = Astro.locals.session;
+const viewAsResident = Astro.locals.viewAsResident;
+const isTreasurer = session?.role === 'admin' && !viewAsResident;
+const canSubmit = Boolean(session) && !viewAsResident;
+const rows = await listFlatMobiles();
+const error = Astro.url.searchParams.get('error');
+const registeredFlats = Object.fromEntries(
+  rows.filter((row) => row.last4).map((row) => [row.flatId, row.last4 as string]),
+);
+const directory = FLATS.map((flat) => {
+  const row = rows.find((item) => item.flatId === flat.id);
+  return { id: flat.id, resident: flat.resident, last4: row?.last4 ?? null };
+});
+const formAction = withView('/api/ledger/e-receipts', viewAsResident);
+const requestedFlat = String(Astro.url.searchParams.get('flat') ?? '').trim();
+const selectedFlat = FLATS.some((flat) => flat.id === requestedFlat) ? requestedFlat : '';
+const changeMobileHref = (flatId: string) =>
+  `${withView(`/ledger/e-receipts?flat=${encodeURIComponent(flatId)}`, viewAsResident)}#register-mobile`;
+---
+
+<Layout title={`E-Receipts · ${ASSOCIATION}`} noindex>
+  <Navigation current="e-receipts" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="e-receipts"
+      title="E-Receipts."
+      subtitle={isTreasurer
+        ? 'Full mobile numbers for WhatsApp e-receipts. Confirm before replacing a number.'
+        : 'Register a mobile number for WhatsApp e-receipts. Only the last 4 digits are shown to residents.'}
+    />
+
+    {error === 'mobile' && (
+      <p class="mt-6 rounded-md bg-error-soft px-3 py-2 text-sm text-error-deep dark:bg-red-950/40 dark:text-red-200">
+        Enter a 10-digit Indian mobile number starting with 6, 7, 8, or 9.
+      </p>
+    )}
+
+    {!isTreasurer && (
+      <section id="register-mobile" class="card-elevate mt-6 rounded-xl bg-canvas p-5 dark:bg-slate-900 sm:mt-8 sm:p-6">
+        <h2 class="text-lg font-semibold tracking-tight">Register mobile number</h2>
+        <p class="mt-1 text-sm leading-6 text-body dark:text-slate-300">
+          Choose a flat. The resident name fills in automatically. WhatsApp messages will use this number later. Submit again to replace a number already registered.
+        </p>
+        <form
+          method="post"
+          action={formAction}
+          class="mt-5 grid gap-4"
+          data-ledger-form
+          data-confirm-title="Register this mobile number?"
+          data-confirm-copy="This number will be used for WhatsApp e-receipts."
+          data-overwrite-title="Replace this mobile number?"
+          data-overwrite-copy="This overwrites the number already registered for this flat."
+          data-confirm-label="Confirm submit"
+          data-registered-flats={JSON.stringify(registeredFlats)}
+          inert={canSubmit ? undefined : true}
+        >
+          <input type="hidden" name="intent" value="save" />
+          <label class="block">
+            <span class="entry-label">Flat no</span>
+            <select class="sheet-input mt-1" name="flat_id" required data-flat-picker="e-receipt-flats" data-change-label="Flat">
+              <option value="">Choose flat</option>
+              {FLATS.map((flat) => (
+                <option value={flat.id} selected={flat.id === selectedFlat}>{flat.id}</option>
+              ))}
+            </select>
+          </label>
+          <label class="block">
+            <span class="entry-label">Resident</span>
+            <input class="sheet-input mt-1" type="text" data-fill-resident data-confirm-include="1" data-change-label="Resident" disabled />
+          </label>
+          <div>
+            <span class="entry-label">Mobile number</span>
+            <div class="mt-1 flex overflow-hidden rounded-md border border-hairline dark:border-slate-700">
+              <span class="inline-flex min-h-11 items-center bg-canvas-soft px-3 text-sm text-mute dark:bg-slate-800 dark:text-slate-400">+91</span>
+              <input
+                class="sheet-input min-w-0 flex-1"
+                type="text"
+                name="mobile"
+                inputmode="numeric"
+                maxlength="10"
+                pattern="[6-9][0-9]{9}"
+                autocomplete="tel-national"
+                required
+                data-change-label="Mobile"
+                aria-label="10-digit mobile number"
+              />
+            </div>
+          </div>
+          {canSubmit && (
+            <button type="submit" class="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950">
+              Submit
+            </button>
+          )}
+        </form>
+      </section>
+    )}
+
+    <section class="card-elevate mt-6 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900 sm:mt-8">
+      <div class="border-b border-hairline px-4 py-3 dark:border-slate-800 sm:px-5">
+        <h2 class="text-lg font-semibold tracking-tight">Registered numbers</h2>
+        <p class="mt-1 text-sm text-body dark:text-slate-300">
+          {isTreasurer ? 'Full numbers. Save a row to replace it.' : 'Last 4 digits, same flat order as Maintenance. Change opens the form above.'}
+        </p>
+      </div>
+      <div class="sheet-scroll">
+        <table class="sheet-table w-full">
+          <thead>
+            <tr>
+              <th class="text-left">Flat</th>
+              <th class="text-left">Resident</th>
+              <th class="text-left">Mobile</th>
+              {!isTreasurer && <th class="text-left"> </th>}
+              {isTreasurer && <th></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr>
+                {isTreasurer ? (
+                  <td colspan={4} class="p-0">
+                    <form method="post" action="/api/ledger/e-receipts" class="entry-form" data-ledger-form data-confirm-title="Replace this mobile number?" data-confirm-copy="Confirm before changing a number used for WhatsApp e-receipts.">
+                      <input type="hidden" name="flat_id" value={row.flatId} />
+                      <label class="entry-field">
+                        <span class="entry-label">Flat</span>
+                        <input class="sheet-input" type="text" value={row.flatId} disabled data-confirm-include="1" data-change-label="Flat" />
+                      </label>
+                      <label class="entry-field entry-field-wide">
+                        <span class="entry-label">Resident</span>
+                        <input class="sheet-input" type="text" value={row.resident} disabled data-confirm-include="1" data-change-label="Resident" />
+                      </label>
+                      <label class="entry-field">
+                        <span class="entry-label">Mobile</span>
+                        <div class="flex overflow-hidden rounded-md border border-hairline dark:border-slate-700">
+                          <span class="inline-flex min-h-11 items-center bg-canvas-soft px-2 text-sm text-mute dark:bg-slate-800 dark:text-slate-400">+91</span>
+                          <input
+                            class="sheet-input min-w-0 flex-1"
+                            type="text"
+                            name="mobile"
+                            value={row.mobile ?? ''}
+                            inputmode="numeric"
+                            maxlength="10"
+                            pattern="[6-9][0-9]{9}"
+                            autocomplete="off"
+                            required
+                            data-change-label={`${row.resident} · ${row.flatId}`}
+                            aria-label={`${row.resident} mobile number`}
+                          />
+                        </div>
+                      </label>
+                      <div class="entry-actions">
+                        <button type="submit" name="intent" value="update" class="entry-btn border border-hairline dark:border-slate-700">Save</button>
+                      </div>
+                    </form>
+                  </td>
+                ) : (
+                  <>
+                    <td>{row.flatId}</td>
+                    <td class="whitespace-normal">{row.resident}</td>
+                    <td class="font-mono tabular-nums">{formatMobileLast4(row.mobile)}</td>
+                    <td>
+                      <a
+                        href={changeMobileHref(row.flatId)}
+                        class="inline-flex min-h-11 items-center text-sm text-link underline decoration-link/30 underline-offset-2 hover:decoration-link"
+                      >
+                        Change
+                      </a>
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <Footer />
+  <script type="application/json" id="e-receipt-flats" set:html={JSON.stringify(directory)} />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

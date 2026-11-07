@@ -1,0 +1,166 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import { ASSOCIATION } from '../../lib/constants';
+import { withView } from '../../lib/auth';
+import { displayDate, formatDateTime } from '../../lib/format';
+import {
+  BANK_HOLIDAY_STATE,
+  bankHolidayYears,
+  currentKolkataYear,
+  lastBankHolidayRun,
+  listBankHolidays,
+} from '../../lib/bank-holidays';
+import { weekday } from '../../lib/bank-holidays-excel';
+import { todayIso } from '../../lib/years';
+
+const viewAsResident = Astro.locals.viewAsResident;
+const isTreasurer = Astro.locals.session?.role === 'admin' && !viewAsResident;
+const thisYear = currentKolkataYear();
+const savedYears = await bankHolidayYears();
+const years = [...new Set([thisYear, ...savedYears])].sort((a, b) => b - a);
+const requested = Number(Astro.url.searchParams.get('hy'));
+const year = years.includes(requested) ? requested : thisYear;
+const holidays = await listBankHolidays(year);
+const today = todayIso();
+const next = holidays.find((row) => row.date >= today);
+const lastRun = await lastBankHolidayRun();
+const fetchStatus = Astro.url.searchParams.get('fetch');
+const yearHref = (value: number) => withView(`/ledger/bank-holidays${value === thisYear ? '' : `?hy=${value}`}`, viewAsResident);
+const dayNumber = (iso: string) => {
+  const [y, m, d] = iso.split('-').map(Number);
+  return Date.UTC(y, m - 1, d) / 86_400_000;
+};
+const daysUntil = (iso: string) => Math.round(dayNumber(iso) - dayNumber(today));
+---
+
+<Layout title={`Bank Holidays · ${ASSOCIATION}`} noindex>
+  <Navigation current="bank-holidays" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="bank-holidays"
+      title="Bank holidays."
+      subtitle={`${BANK_HOLIDAY_STATE} (Kolkata) bank holidays for ${year}. Download a print-ready Excel to pin up near the notice board. Updated every 1 January.`}
+    />
+
+    {fetchStatus === 'ok' && (
+      <p class="mt-6 rounded-md bg-canvas-soft px-3 py-2 text-sm text-body dark:bg-slate-800 dark:text-slate-300" role="status">
+        {lastRun?.detail ?? 'Bank holidays updated.'}
+      </p>
+    )}
+    {fetchStatus === 'failed' && (
+      <p class="mt-6 rounded-md bg-error-soft px-3 py-2 text-sm text-error-deep dark:bg-red-950/40 dark:text-red-200" role="alert">
+        Fetch failed: {lastRun?.detail ?? 'unknown error'}. This attempt is logged on Activity.
+      </p>
+    )}
+    {fetchStatus === 'wait' && (
+      <p class="mt-6 rounded-md bg-canvas-soft px-3 py-2 text-sm text-body dark:bg-slate-800 dark:text-slate-300" role="status">
+        A fetch ran less than a minute ago. Try again shortly.
+      </p>
+    )}
+
+    <section class="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center">
+      {years.length > 1 && (
+        <nav class="flex flex-wrap gap-2" aria-label="Holiday year">
+          {years.map((value) => (
+            <a
+              href={yearHref(value)}
+              class:list={[
+                'inline-flex h-11 items-center rounded-full px-4 text-sm',
+                value === year
+                  ? 'bg-primary text-on-primary dark:bg-slate-100 dark:text-slate-950'
+                  : 'border border-hairline dark:border-slate-700',
+              ]}
+              aria-current={value === year ? 'page' : undefined}
+            >
+              {value}
+            </a>
+          ))}
+        </nav>
+      )}
+      {holidays.length > 0 && (
+        <a
+          href={`/api/bank-holidays?year=${year}`}
+          class="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950"
+          download
+        >
+          Download Excel (print-ready)
+        </a>
+      )}
+      {isTreasurer && (
+        <form
+          method="post"
+          action="/api/ledger/bank-holidays"
+          data-ledger-form
+          data-confirm-action
+          data-confirm-title={`Fetch ${thisYear} bank holidays now?`}
+          data-confirm-copy={`This reads the ${BANK_HOLIDAY_STATE} list from the HDFC Bank holiday page, and the Kolkata festival dates from Drik Panchang, and replaces each saved ${thisYear} list if it is complete.`}
+          data-confirm-label="Fetch now"
+          data-confirm-rows={JSON.stringify([
+            { label: 'Bank holidays', from: 'HDFC Bank', to: `${BANK_HOLIDAY_STATE} list` },
+            { label: 'Festival dates', from: 'Drik Panchang', to: 'Kolkata' },
+            { label: `${thisYear} list`, from: holidays.length && year === thisYear ? `${holidays.length} saved` : 'not saved', to: 'refresh' },
+          ])}
+        >
+          <button type="submit" class="inline-flex h-11 items-center justify-center rounded-md border border-hairline px-4 text-sm font-medium dark:border-slate-700">
+            Fetch now
+          </button>
+        </form>
+      )}
+    </section>
+
+    {isTreasurer && lastRun && (
+      <p class="mt-3 text-sm text-body dark:text-slate-300">
+        Last fetch {formatDateTime(lastRun.at)} ({lastRun.trigger}):
+        <span class:list={[lastRun.status === 'failed' ? 'text-error' : 'text-ink dark:text-slate-100']}>{lastRun.status === 'ok' ? 'OK' : 'failed'}</span>
+        — {lastRun.detail}
+      </p>
+    )}
+
+    <section id="sheet-capture" class="card-elevate mt-6 overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">
+      {holidays.length === 0 ? (
+        <p class="px-5 py-6 text-sm text-body dark:text-slate-300">
+          The {year} list has not been fetched yet.{isTreasurer ? ' Use Fetch now, or it will be fetched automatically on 1 January.' : ' It is fetched automatically on 1 January.'}
+        </p>
+      ) : (
+        <div class="sheet-scroll">
+          <table class="sheet-table w-full">
+            <thead>
+              <tr>
+                <th class="text-left">#</th>
+                <th class="text-left">Date</th>
+                <th class="text-left">Day</th>
+                <th class="text-left">Holiday</th>
+              </tr>
+            </thead>
+            <tbody>
+              {holidays.map((row, index) => {
+                const past = row.date < today;
+                const isNext = next?.date === row.date;
+                return (
+                  <tr class:list={[past && 'text-mute dark:text-slate-500', isNext && 'bg-canvas-soft dark:bg-slate-800']}>
+                    <td class="tabular-nums">{index + 1}</td>
+                    <td class="whitespace-nowrap tabular-nums">{displayDate(row.date)}</td>
+                    <td>{weekday(row.date)}</td>
+                    <td class="whitespace-normal">
+                      {row.name}
+                      {isNext && (
+                        <span class="ml-2 rounded-full bg-primary px-2 py-0.5 text-xs text-on-primary dark:bg-slate-100 dark:text-slate-950">
+                          {row.date === today ? 'Today' : `Next · in ${daysUntil(row.date)} days`}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  </main>
+  <Footer />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

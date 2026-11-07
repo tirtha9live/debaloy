@@ -17,6 +17,7 @@ declare namespace App {
     maintenanceMode: boolean;
     ledgerYear?: import('./lib/years').LedgerYear;
     ledgerYears?: import('./lib/years').LedgerYear[];
+    cfContext?: ExecutionContext;
   }
 }
 

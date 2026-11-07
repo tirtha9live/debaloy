@@ -20,8 +20,8 @@ UI decisions for **Debaloy** that future changes should preserve unless explicit
 
 ## Ledger UI
 
-- Spreadsheet chrome: sticky Flat/Resident columns, cream/blue editable cells in light mode, slate/cyan in dark mode. Maintenance blank cells are not recorded. **0** means payment not required (paid in advance, or some operating expenses were paid directly for the society, etc.). A subtle red inset outline on the **current** maintenance month (blank only) or on Puja Contribution (blank/zero) means **Payment pending**. Excel downloads blank as empty and 0 as 0.
-- Admin edits in place (amount + Bank/Cash). Residents see computed values only.
+- Spreadsheet chrome: sticky Flat/Resident columns, cream/blue editable cells in light mode, slate/cyan in dark mode. On Maintenance, **NPR** means no payment required — paid in advance, or paid as dues at a later date (the amount sits in the month it was received). A subtle red inset outline means **Payment pending**: on Maintenance, any blank or 0 cell in the current month **or any earlier month** (NPR and future months are never red); on Puja Contribution, blank/zero. On the web, a Maintenance 0 shows as blank, same as not paid. Cells can carry details the treasurer types under the amount: NPR cells get a short note (why NPR); paid cells (amount > 0) get a received date (pre-filled with today) and an optional note (e.g. why more or less than expected). Notes are up to 80 characters. Everyone else sees them as a tooltip on hover or tap, e.g. “Received 12 Nov 2026 · Short by 200”; a dotted underline marks cells that have one. Excel formatted adds the same text as a cell comment. Excel downloads blank as empty, 0 as 0, and NPR as `NPR`.
+- Treasurer edits amount and Bank/Cash mode in place, and sees Total Bank, Total Cash, and Total. Residents (and View as resident) see month amounts only — no mode column, no bank/cash split, no trailing Total — so others paying online is not visible. The home Maintenance card hides the Bank · Cash split from residents too.
 - A single **Download** control opens Excel formatted and Excel raw. Treasurer also sees **JSON export** and **JSON import**. Import asks Merge (keep extra rows) or Overwrite (clear, then restore). Residents never see those options.
 - The Download control shows a spinner and “Downloading…” while a file is being prepared; `aria-live` reports progress. Excel formatted, Excel raw, and treasurer JSON backup still work as `/api/export?kind=` links if JS is off.
 - Handover (the original takeover record) lives on **Archive**, together with closed years as frozen snapshots. This year’s account is the live statement that updates with new data and downloads in the same form.
@@ -31,11 +31,13 @@ UI decisions for **Debaloy** that future changes should preserve unless explicit
 - Empty logs show “No rows yet.” rather than a broken table.
 - Other Collections and expense summaries list only named types. Spare blank slots are not shown. The treasurer adds a type from the category summary; it then appears there, in the row dropdown, and on This Year.
 - Destructive row delete asks for confirmation.
+- Expense receipts: treasurer rows show “View receipt (size) · Replace · Remove” or “No receipt · Attach receipt”. Picking a file compresses photos, then a confirm dialog shows the file name and size (and “compressed from …”). Residents see a **Receipt** link next to the description. Clicking a receipt link (resident or treasurer) opens an overlay that zooms out from the link: image fit to screen, or the PDF in a frame, with the expense as the title, “Open in new tab”, and an X. Esc, X, or a click outside shrinks it back to the link and returns focus. Ctrl/Cmd-click still opens a new tab; reduced-motion users get no animation.
 - Treasurer save is deliberate: Save sheet / Save / Add row opens a checklist of every changed value (for example `0.00 → 5,000.00`) and writes nothing until Confirm save.
 - Treasurer **Activity** (nav + home card) shows engagement (pages visited, time on page, popular sheets), sessions, a page trail, **ledger changes** (confirmed saves from the treasurer checklist), and login audit. Residents never see it. Residents share one password, but each browser login gets its own session id; Activity also records IP, device, and a short fingerprint (hash of IP + user agent). Sessions expire after **24 hours** (cookie + server record); then the user must log in again.
 - **Years** is where the treasurer closes books on the meeting date. Closed years then appear on **Archive**. Freeze dates can be changed from Archive. Frozen years are read-only snapshots.
 - The Puja sheet is labeled **Puja Contribution**.
 - The income sheet is labeled **Other Collections**.
+- **E-Receipts** and **Online payments** are parked. Do not show them in nav, home, or archive until asked to turn them back on.
 
 ## Responsive
 
@@ -45,7 +47,7 @@ UI decisions for **Debaloy** that future changes should preserve unless explicit
 - Header actions are a 2-column grid on phones, with Download full-width. Treasurer **Save sheet** is a full-width bar pinned to the bottom, above the iPhone home indicator.
 - Inputs and selects are at least 44px tall and 16px type on phones so iOS does not zoom and thumbs can tap cells.
 - Horizontal scroll for wide grids (maintenance), with a swipe hint. The grid is a freeze pane: Flat, Resident, and month headers stay on screen while you scroll every flat and month. The pane uses a bounded max height (stable `svh`, not jumping `dvh`). When vertical scroll hits the top or bottom of the flat list, page scroll takes over. Do not use an unbounded full-page horizontal scroller on Android — it swallows vertical page scroll.
-- Resident copy never tells people to edit. On Maintenance they see that **0** means payment not required, not “leave a cell blank”.
+- Resident copy never tells people to edit. On Maintenance they see that **NPR** means no payment required, not “leave a cell blank”.
 - This Year and Handover stack **Receipts**, then **Payments**, on phones so labels wrap. The side-by-side spreadsheet returns from `lg`. Do not rely on a four-column nowrap table on Android.
 - Other Collections and expense rows stack as labeled cards on phones; the spreadsheet row layout returns from `xl`. Withdrawals use the same pattern with date, amount, and note.
 - Withdrawals sit after Expenses in the sheet nav. They are a tracker only: not shown on This Year. Combined closing cash is unchanged.

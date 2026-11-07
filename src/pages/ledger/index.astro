@@ -3,13 +3,14 @@ import Layout from '../../layouts/Layout.astro';
 import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
-import { ASSOCIATION, SHEETS } from '../../lib/constants';
+import { ASSOCIATION, isYearlessSheet, VISIBLE_SHEETS } from '../../lib/constants';
 import { withLedger, withView } from '../../lib/auth';
 import { formatInr } from '../../lib/format';
 import { loadLedger } from '../../lib/ledger';
 
 const snapshot = await loadLedger(Astro.locals.ledgerYear);
 const viewAsResident = Astro.locals.viewAsResident;
+const isTreasurer = Astro.locals.session?.role === 'admin' && !viewAsResident;
 ---
 
 <Layout title={`Ledger home · ${ASSOCIATION}`} noindex>
@@ -25,7 +26,9 @@ const viewAsResident = Astro.locals.viewAsResident;
       <article class="card-elevate rounded-xl bg-canvas p-6 dark:bg-slate-900">
         <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Maintenance</p>
         <p class="mt-3 text-2xl font-semibold tabular-nums tracking-tight">{formatInr(snapshot.maintenanceTotals.grand)}</p>
-        <p class="mt-1 text-sm text-body dark:text-slate-300">Bank {formatInr(snapshot.maintenanceTotals.bank)} · Cash {formatInr(snapshot.maintenanceTotals.cash)}</p>
+        {isTreasurer && (
+          <p class="mt-1 text-sm text-body dark:text-slate-300">Bank {formatInr(snapshot.maintenanceTotals.bank)} · Cash {formatInr(snapshot.maintenanceTotals.cash)}</p>
+        )}
       </article>
       <article class="card-elevate rounded-xl bg-canvas p-6 dark:bg-slate-900">
         <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Puja Contribution</p>
@@ -45,9 +48,9 @@ const viewAsResident = Astro.locals.viewAsResident;
     </div>
 
     <div class="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {SHEETS.map((sheet) => (
+      {VISIBLE_SHEETS.map((sheet) => (
         <a
-          href={sheet.slug === 'handover' || sheet.slug === 'years' ? withView(sheet.href, viewAsResident) : withLedger(sheet.href, Astro.locals)}
+          href={isYearlessSheet(sheet.slug) ? withView(sheet.href, viewAsResident) : withLedger(sheet.href, Astro.locals)}
           class="card-elevate min-h-24 rounded-xl bg-canvas p-5 transition-colors duration-200 hover:bg-canvas-soft dark:bg-slate-900 dark:hover:bg-slate-800"
         >
           <h2 class="text-lg font-semibold tracking-tight">{sheet.label}</h2>

@@ -7,7 +7,8 @@ describe('save confirmation (client + layout)', () => {
 
   it('ledger-actions only imports browser-safe modules', () => {
     const imports = importSourcesFromTs(ledgerActions);
-    expect(imports.every((spec) => spec.startsWith('../lib/format'))).toBe(true);
+    expect(imports.every((spec) => spec === '../lib/format' || spec === '../lib/receipt-limits')).toBe(true);
+    expect(readSrc('lib/receipt-limits.ts')).not.toMatch(/^import /m);
     expect(imports.some((spec) => spec.includes('audit'))).toBe(false);
     expect(imports.some((spec) => spec.includes('activity'))).toBe(false);
   });
@@ -45,6 +46,8 @@ describe('save confirmation (client + layout)', () => {
       'pages/ledger/receipts.astro',
       'pages/ledger/withdrawals.astro',
       'pages/ledger/years.astro',
+      'pages/ledger/e-receipts.astro',
+      'pages/ledger/payments.astro',
       'components/EntriesSheet.astro',
     ];
     for (const file of forms) {
@@ -57,6 +60,8 @@ describe('save confirmation (client + layout)', () => {
       'pages/ledger/maintenance.astro',
       'pages/ledger/withdrawals.astro',
       'pages/ledger/receipts.astro',
+      'pages/ledger/e-receipts.astro',
+      'pages/ledger/payments.astro',
     ];
     for (const file of pages) {
       expect(readSrc(file), file).toContain('ledger-actions.ts');

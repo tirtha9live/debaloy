@@ -121,12 +121,37 @@ export const HANDOVER_CLOSING_CASH = 1364.0;
 export const SHEETS = [
   { slug: 'handover', href: '/ledger/handover', label: 'Archive', hint: 'Takeover record and closed years' },
   { slug: 'maintenance', href: '/ledger/maintenance', label: 'Maintenance', hint: 'Monthly collections' },
+  { slug: 'e-receipts', href: '/ledger/e-receipts', label: 'E-Receipts', hint: 'Mobile numbers for WhatsApp receipts' },
+  { slug: 'payments', href: '/ledger/payments', label: 'Online payments', hint: 'Bank transfers pending verification' },
   { slug: 'puja', href: '/ledger/puja', label: 'Puja Contribution', hint: 'Cash contribution' },
   { slug: 'income', href: '/ledger/income', label: 'Other Collections', hint: 'Other receipts' },
   { slug: 'expenses', href: '/ledger/expenses', label: 'Expenses', hint: 'Payments log' },
   { slug: 'withdrawals', href: '/ledger/withdrawals', label: 'Withdrawals', hint: 'Bank to cash in hand' },
   { slug: 'receipts', href: '/ledger/receipts', label: 'This year', hint: 'FY statement · updates with new data' },
   { slug: 'years', href: '/ledger/years', label: 'Years', hint: 'Close books on the meeting date' },
+  { slug: 'bank-holidays', href: '/ledger/bank-holidays', label: 'Bank Holidays', hint: 'West Bengal · print-ready Excel' },
 ] as const;
 
+/** Sheets that are not tied to the selected ledger year. */
+const YEARLESS_SHEET_SLUGS: readonly string[] = ['handover', 'years', 'bank-holidays'];
+
+export function isYearlessSheet(slug: string) {
+  return YEARLESS_SHEET_SLUGS.includes(slug);
+}
+
 export type SheetSlug = (typeof SHEETS)[number]['slug'];
+
+/** Parked for later. Hidden from nav, home, archive snapshots, and direct URLs. */
+export const DISABLED_SHEET_SLUGS = ['e-receipts', 'payments'] as const satisfies readonly SheetSlug[];
+
+export function isSheetVisible(slug: string) {
+  return !(DISABLED_SHEET_SLUGS as readonly string[]).includes(slug);
+}
+
+export function isDisabledLedgerPath(pathname: string) {
+  return DISABLED_SHEET_SLUGS.some(
+    (slug) => pathname === `/ledger/${slug}` || pathname === `/api/ledger/${slug}`,
+  );
+}
+
+export const VISIBLE_SHEETS = SHEETS.filter((sheet) => isSheetVisible(sheet.slug));

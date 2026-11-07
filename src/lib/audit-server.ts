@@ -1,7 +1,13 @@
 import type { Session } from './auth';
 import { FLATS, type CategoryKind, type PayMode } from './constants';
-import { displayDate, formatAmount, roundAmount } from './format';
-import { loadLedger, type LedgerEntry, type Withdrawal } from './ledger';
+import { displayDate, formatAmount, NPR_LABEL, roundAmount } from './format';
+import {
+  loadLedger,
+  maintenanceCellExtras,
+  type LedgerEntry,
+  type MaintenanceUpdate,
+  type Withdrawal,
+} from './ledger';
 import { recordLedgerAudit } from './activity';
 import type { LedgerYear } from './years';
 import type { AuditChange } from './audit';
@@ -36,7 +42,7 @@ export async function auditMaintenanceSave(
   session: Session,
   request: Request,
   year: LedgerYear,
-  updates: Array<{ flatId: string; month: string; amount: number | null; mode: PayMode }>,
+  updates: MaintenanceUpdate[],
 ) {
   const snapshot = await loadLedger(year);
   const residentByFlat = new Map(FLATS.map((flat) => [flat.id, flat.resident]));
@@ -45,16 +51,25 @@ export async function auditMaintenanceSave(
 
   for (const update of updates) {
     const row = byFlat.get(update.flatId);
-    const prev = row?.months[update.month] ?? { amount: null, mode: 'Cash' as const };
-    const amountSame = amountsSame(prev.amount, update.amount);
-    const modeSame = prev.mode === update.mode;
-    if (amountSame && modeSame) continue;
+    const prev = row?.months[update.month] ?? {
+      amount: null,
+      mode: 'Cash' as const,
+      npr: false,
+      note: null,
+      paidOn: null,
+    };
+    const amountSame = prev.npr === update.npr && (update.npr || amountsSame(prev.amount, update.amount));
+    const modeSame = update.npr || prev.mode === update.mode;
+    const next = maintenanceCellExtras(update);
+    const noteSame = (prev.note ?? null) === next.note;
+    const dateSame = (prev.paidOn ?? null) === next.paidOn;
+    if (amountSame && modeSame && noteSame && dateSame) continue;
     const who = residentByFlat.get(update.flatId) ?? update.flatId;
     if (!amountSame) {
       changes.push({
         label: `${who} · ${update.month}`,
-        from: auditAmount(prev.amount),
-        to: auditAmount(update.amount),
+        from: prev.npr ? NPR_LABEL : auditAmount(prev.amount),
+        to: update.npr ? NPR_LABEL : auditAmount(update.amount),
       });
     }
     if (!modeSame) {
@@ -62,6 +77,20 @@ export async function auditMaintenanceSave(
         label: `${who} · ${update.month} · mode`,
         from: prev.mode,
         to: update.mode,
+      });
+    }
+    if (!dateSame) {
+      changes.push({
+        label: `${who} · ${update.month} · received`,
+        from: prev.paidOn ? displayDate(prev.paidOn) : '—',
+        to: next.paidOn ? displayDate(next.paidOn) : '—',
+      });
+    }
+    if (!noteSame) {
+      changes.push({
+        label: `${who} · ${update.month} · note`,
+        from: auditText(prev.note),
+        to: auditText(next.note),
       });
     }
   }
@@ -335,6 +364,55 @@ export function yearActionAudit(intent: string, meetingDate: string): AuditChang
       label: intent === 'close' ? 'Close books' : 'Archive freeze date',
       from: '—',
       to: displayDate(meetingDate),
+    },
+  ];
+}
+
+export function mobileSaveAudit(input: {
+  flatId: string;
+  resident: string;
+  from: string | null;
+  to: string;
+  masked: boolean;
+}): AuditChange[] {
+  const who = `${input.resident} · ${input.flatId}`;
+  const show = (value: string | null) => {
+    if (!value) return '—';
+    return input.masked ? `•••• ${value.slice(-4)}` : `+91-${value}`;
+  };
+  return [{ label: who, from: show(input.from), to: show(input.to) }];
+}
+
+export function paymentSubmitAudit(input: {
+  flatId: string;
+  resident: string;
+  type: string;
+  amount: number;
+}): AuditChange[] {
+  return [
+    {
+      label: `${input.resident} · ${input.flatId} · ${input.type}`,
+      from: '—',
+      to: auditAmount(input.amount),
+    },
+  ];
+}
+
+export function paymentApproveAudit(input: {
+  flatId: string;
+  resident: string;
+  type: string;
+  amount: number;
+  bank: string;
+  accountHolder: string;
+  month?: string | null;
+}): AuditChange[] {
+  const month = input.month ? ` · ${input.month}` : '';
+  return [
+    {
+      label: `${input.resident} · ${input.flatId} · ${input.type}${month}`,
+      from: 'pending',
+      to: `${auditAmount(input.amount)} · ${auditText(input.bank)} · ${auditText(input.accountHolder)}`,
     },
   ];
 }
