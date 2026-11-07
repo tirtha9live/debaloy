@@ -3,6 +3,7 @@ import Layout from '../../layouts/Layout.astro';
 import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
+import BankDetails from '../../components/BankDetails.astro';
 import { ASSOCIATION, isYearlessSheet, VISIBLE_SHEETS } from '../../lib/constants';
 import { withLedger, withView } from '../../lib/auth';
 import { formatInr } from '../../lib/format';
@@ -45,6 +46,10 @@ const isTreasurer = Astro.locals.session?.role === 'admin' && !viewAsResident;
         <p class="mt-3 text-2xl font-semibold tabular-nums tracking-tight">{formatInr(snapshot.cashInBank)}</p>
         <p class="mt-1 text-sm text-body dark:text-slate-300">Current cash in bank</p>
       </article>
+    </div>
+
+    <div class="mt-6">
+      <BankDetails />
     </div>
 
     <div class="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

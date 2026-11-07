@@ -3,6 +3,16 @@ export const ASSOCIATION = 'Debaloy Flat Owners Welfare Association';
 export const ADDRESS =
   '93 Baguiati Road, 3rd Lane & 68 Baguiati Road, 4th Lane, Kolkata – 700028';
 export const FY_LABEL = 'FY 2026-27';
+
+/** Association bank account for maintenance and other deposits (NEFT / IMPS / RTGS / cash at branch). */
+export const ASSOCIATION_BANK = {
+  bank: 'UCO Bank',
+  branch: 'Dakshinpara, Salt Lake, Kolkata',
+  branchAddress: '244, Dakshin Para Road, Kolkata, West Bengal 700028',
+  accountNumber: '17880110045862',
+  ifsc: 'UCBA0001788',
+  micr: '700028116',
+} as const;
 export const FY_RANGE = 'September 2026 to August 2027';
 
 export const SESSION_COOKIE = 'debaloy_sid';

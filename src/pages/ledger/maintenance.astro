@@ -3,6 +3,7 @@ import Layout from '../../layouts/Layout.astro';
 import Navigation from '../../components/Navigation.astro';
 import Footer from '../../components/Footer.astro';
 import LedgerHeader from '../../components/LedgerHeader.astro';
+import BankDetails from '../../components/BankDetails.astro';
 import { ASSOCIATION } from '../../lib/constants';
 import { CELL_NOTE_MAX, formatAmount, maintenanceCellTip, NPR_LABEL } from '../../lib/format';
 import { loadLedger } from '../../lib/ledger';
@@ -25,6 +26,12 @@ const showMode = Astro.locals.session?.role === 'admin' && !Astro.locals.viewAsR
         : 'Monthly collections by flat. NPR means no payment required.'}
       canEdit={canEdit}
     />
+
+    {!showMode && (
+      <div class="mt-6 sm:mt-8">
+        <BankDetails compact />
+      </div>
+    )}
 
     <form id="maintenance-form" method="post" action="/api/ledger/maintenance" data-ledger-form class="mt-6 sm:mt-8">
       <p class="sheet-swipe-hint">Swipe across for months. Scroll for every flat. Flat and resident stay on screen.</p>
