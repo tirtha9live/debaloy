@@ -16,6 +16,9 @@ describe('association bank account', () => {
     expect(readSrc('pages/ledger/index.astro')).toMatch(/<BankDetails \/>/);
     expect(readSrc('pages/ledger/maintenance.astro')).toMatch(/!showMode && \(/);
     expect(readSrc('pages/index.astro')).not.toMatch(/BankDetails|17880110045862/);
-    expect(readSrc('components/BankDetails.astro')).toMatch(/data-copy=\{bank\.accountNumber\}/);
+    const card = readSrc('components/BankDetails.astro');
+    expect(card).toMatch(/data-copy=\{bank\.accountNumber\}/);
+    expect(card).toContain('Association Bank account');
+    expect(card).not.toMatch(/NEFT|let the treasurer know/);
   });
 });

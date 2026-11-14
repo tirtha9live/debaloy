@@ -76,10 +76,6 @@ function festival(slug: FestivalSlug) {
   return FESTIVALS.find((item) => item.slug === slug)!;
 }
 
-export function festivalQuery(slug: FestivalSlug) {
-  return festival(slug)?.query ?? slug;
-}
-
 export function festivalPalette(slug: FestivalSlug): [string, string, string] {
   return festival(slug)?.palette ?? ['#f97316', '#facc15', '#b91c1c'];
 }

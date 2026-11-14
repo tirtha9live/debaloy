@@ -9,10 +9,16 @@ import { festivalCalendarFor } from '../lib/calendar-jobs';
 import {
   activeFestival,
   festivalPalette,
-  festivalVariantIndex,
   kolkataClock,
 } from '../lib/festivals';
-import { festivalImagePath, festivalImagesFor, festivalSrcset } from '../lib/festival-images';
+import {
+  festivalImagePath,
+  festivalPhotoWidths,
+  festivalSrcset,
+  listFestivalPhotos,
+  pickFestivalPhoto,
+  pickStoredWidth,
+} from '../lib/festival-images';
 
 if (Astro.locals.session) {
   return Astro.redirect('/ledger');
@@ -22,13 +28,8 @@ const clock = kolkataClock();
 const clockYear = Number(clock.date.slice(0, 4));
 const waitUntil = Astro.locals.cfContext?.waitUntil?.bind(Astro.locals.cfContext);
 const festival = activeFestival(clock.date, await festivalCalendarFor(clockYear, clock.date, waitUntil));
-const festivalYear = festival ? Number(festival.date.slice(0, 4)) : clockYear;
-const festivalImages = festival
-  ? await festivalImagesFor(festival.slug, festivalYear, clock.date, waitUntil)
-  : [];
-const festivalImage = festival && festivalImages.length
-  ? festivalImages[festivalVariantIndex(festival, clock.date, clock.minuteOfDay, festivalImages.length)]
-  : null;
+const festivalImages = festival ? await listFestivalPhotos(festival.slug) : [];
+const festivalImage = festival ? pickFestivalPhoto(festivalImages, festival, clock.date, clock.minuteOfDay) : null;
 const meshStyle = festival
   ? festivalPalette(festival.slug).map((color, i) => `--festival-${'abc'[i]}: ${color}`).join('; ')
   : undefined;
@@ -76,7 +77,7 @@ const errorMessage = locked
       {festivalImage && (
         <figure class="mt-8">
           <img
-            src={festivalImagePath(festivalImage, 800)}
+            src={festivalImagePath(festivalImage, pickStoredWidth(festivalPhotoWidths(festivalImage), 800))}
             srcset={festivalSrcset(festivalImage)}
             sizes="(max-width: 640px) calc(100vw - 2rem), 32rem"
             alt={festivalImage.alt || festival!.title}

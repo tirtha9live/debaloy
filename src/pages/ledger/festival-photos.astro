@@ -1,0 +1,245 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Navigation from '../../components/Navigation.astro';
+import Footer from '../../components/Footer.astro';
+import LedgerHeader from '../../components/LedgerHeader.astro';
+import AdminTabs from '../../components/AdminTabs.astro';
+import { ASSOCIATION } from '../../lib/constants';
+import { listFestivalCalendar } from '../../lib/calendar-jobs';
+import {
+  festivalImagePath,
+  festivalPhotoWidths,
+  listFestivalPhotos,
+  pickFestivalPhoto,
+  pickStoredWidth,
+} from '../../lib/festival-images';
+import { FESTIVAL_IMAGES_PER_FESTIVAL, FESTIVALS, kolkataClock, type FestivalWindow } from '../../lib/festivals';
+import { displayDate } from '../../lib/format';
+
+if (Astro.locals.session?.role !== 'admin' || Astro.locals.viewAsResident) {
+  return Astro.redirect(Astro.locals.viewAsResident ? '/ledger?view=resident' : '/ledger');
+}
+
+const clock = kolkataClock();
+const year = Number(clock.date.slice(0, 4));
+const calendar = await listFestivalCalendar(year);
+const windows = new Map<string, FestivalWindow>(calendar.map((window) => [window.slug, window]));
+const ordered = [...FESTIVALS].sort((a, b) => {
+  const da = windows.get(a.slug)?.days[0] ?? '9999';
+  const db = windows.get(b.slug)?.days[0] ?? '9999';
+  return da.localeCompare(db);
+});
+const photos = await listFestivalPhotos();
+const bySlug = new Map<string, typeof photos>();
+for (const photo of photos) bySlug.set(photo.slug, [...(bySlug.get(photo.slug) ?? []), photo]);
+
+const result = Astro.url.searchParams.get('result');
+const resultFestival = Astro.url.searchParams.get('festival');
+const messages: Record<string, { tone: 'ok' | 'error'; text: string }> = {
+  added: { tone: 'ok', text: 'Photo added.' },
+  removed: { tone: 'ok', text: 'Photo removed.' },
+  pinned: { tone: 'ok', text: 'Photo pinned. It now shows instead of the rotation.' },
+  unpinned: { tone: 'ok', text: 'Pin cleared. Photos rotate again.' },
+  full: { tone: 'error', text: `This festival already has ${FESTIVAL_IMAGES_PER_FESTIVAL} photos. Remove one first.` },
+  link: { tone: 'error', text: 'Paste a photo link that starts with https://images.pexels.com/photos/…' },
+  duplicate: { tone: 'error', text: 'That photo is already in this festival.' },
+  type: { tone: 'error', text: 'Choose a JPG, PNG or WebP photo.' },
+  size: { tone: 'error', text: 'That photo is too large even after compression. Try a smaller photo.' },
+  rate: { tone: 'error', text: 'Too many changes in a minute. Wait a moment and try again.' },
+  file: { tone: 'error', text: 'Choose a photo to upload.' },
+  missing: { tone: 'error', text: 'That photo or festival no longer exists.' },
+};
+const message = result ? messages[result] : null;
+
+const shownDays = (window?: FestivalWindow) => {
+  if (!window) return 'Date not saved yet';
+  const first = window.days[0];
+  const last = window.days[window.days.length - 1];
+  return first === last ? displayDate(first) : `${displayDate(first)} – ${displayDate(last)}`;
+};
+---
+
+<Layout title={`Admin · Festival photos · ${ASSOCIATION}`} noindex>
+  <Navigation current="festival-photos" />
+  <main id="main" class="mx-auto max-w-[1400px] px-4 py-6 sm:px-6 sm:py-10">
+    <LedgerHeader
+      sheet="festival-photos"
+      title="Admin."
+      subtitle={`Festival photos shown above the password box. Up to ${FESTIVAL_IMAGES_PER_FESTIVAL} per festival, rotated across 7am–11pm unless you pin one. Upload your own, add a Pexels photo link, pin, or remove.`}
+    />
+
+    <AdminTabs current="festival-photos" />
+
+    {message && (
+      <p
+        id="top"
+        class:list={[
+          'mt-6 rounded-md px-3 py-2 text-sm',
+          message.tone === 'ok'
+            ? 'bg-canvas-soft text-body dark:bg-slate-800 dark:text-slate-300'
+            : 'bg-error-soft text-error-deep dark:bg-red-950/40 dark:text-red-200',
+        ]}
+        role={message.tone === 'ok' ? 'status' : 'alert'}
+      >
+        {message.text}
+        {resultFestival && ` (${FESTIVALS.find((item) => item.slug === resultFestival)?.title(year) ?? resultFestival})`}
+      </p>
+    )}
+
+    <div class="mt-6 space-y-6 sm:mt-8">
+      {ordered.map((festival) => {
+        const window = windows.get(festival.slug);
+        const list = bySlug.get(festival.slug) ?? [];
+        const live = window?.days.includes(clock.date);
+        const full = list.length >= FESTIVAL_IMAGES_PER_FESTIVAL;
+        const title = festival.title(year);
+        const pinned = list.find((photo) => photo.pinned);
+        const showing = live && window ? pickFestivalPhoto(list, window, clock.date, clock.minuteOfDay) : null;
+        return (
+          <section id={festival.slug} class="card-elevate rounded-xl bg-canvas p-5 dark:bg-slate-900 sm:p-6">
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 class="text-lg font-semibold tracking-tight">
+                {title}
+                {live && <span class="ml-2 rounded-full bg-primary px-2 py-0.5 align-middle text-xs text-on-primary dark:bg-slate-100 dark:text-slate-950">Showing now</span>}
+              </h2>
+              <p class="text-sm text-body dark:text-slate-300">
+                {shownDays(window)} · {list.length} of {FESTIVAL_IMAGES_PER_FESTIVAL} photos · {pinned ? 'Pinned photo' : 'Rotates 7am–11pm'}
+              </p>
+            </div>
+            {pinned && (
+              <form
+                method="post"
+                action="/api/ledger/festival-photos"
+                class="mt-2"
+                data-ledger-form
+                data-confirm-action
+                data-confirm-title="Go back to rotating photos?"
+                data-confirm-copy="The pin is cleared; the landing page rotates this festival’s photos across 7am–11pm again."
+                data-confirm-label="Clear pin"
+                data-confirm-rows={JSON.stringify([{ label: `${title} · landing photo`, from: 'Pinned', to: 'Rotation' }])}
+              >
+                <input type="hidden" name="slug" value={festival.slug} />
+                <button type="submit" name="intent" value="unpin" class="text-sm text-link underline decoration-link/30 underline-offset-2">
+                  Clear pin and rotate again
+                </button>
+              </form>
+            )}
+
+            {list.length === 0 ? (
+              <p class="mt-4 text-sm text-mute dark:text-slate-400">No photos yet. The landing page shows the greeting without a photo.</p>
+            ) : (
+              <ul class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                {list.map((photo) => (
+                  <li class:list={['festival-thumb', photo.pinned && 'is-pinned']}>
+                    <div class="relative">
+                      <img
+                        src={festivalImagePath(photo, pickStoredWidth(festivalPhotoWidths(photo), 300))}
+                        alt={photo.alt || title}
+                        loading="lazy"
+                        decoding="async"
+                        class="aspect-[3/2] w-full rounded-md object-cover"
+                      />
+                      {(photo.pinned || showing?.photoKey === photo.photoKey) && (
+                        <span class="festival-badge">{photo.pinned ? 'Pinned' : 'On landing now'}</span>
+                      )}
+                    </div>
+                    <div class="mt-1 flex flex-wrap items-center justify-between gap-1 text-xs text-mute dark:text-slate-400">
+                      <span>{photo.source === 'upload' ? 'Uploaded' : 'Pexels'}</span>
+                      {!photo.pinned && (
+                        <form
+                          method="post"
+                          action="/api/ledger/festival-photos"
+                          data-ledger-form
+                          data-confirm-action
+                          data-confirm-title="Pin this photo?"
+                          data-confirm-copy="It shows for this festival instead of the rotation until you clear the pin."
+                          data-confirm-label="Pin photo"
+                          data-confirm-rows={JSON.stringify([{ label: `${title} · landing photo`, from: pinned ? 'Another pinned photo' : 'Rotation', to: photo.alt || photo.photoKey }])}
+                        >
+                          <input type="hidden" name="slug" value={festival.slug} />
+                          <input type="hidden" name="photo_key" value={photo.photoKey} />
+                          <button type="submit" name="intent" value="pin" class="festival-pin">Pin</button>
+                        </form>
+                      )}
+                      <form
+                        method="post"
+                        action="/api/ledger/festival-photos"
+                        data-ledger-form
+                        data-confirm-action
+                        data-confirm-title="Remove this photo?"
+                        data-confirm-copy="It will no longer show on the landing page. The file is deleted."
+                        data-confirm-label="Remove photo"
+                        data-confirm-rows={JSON.stringify([{ label: `${title} · photo`, from: photo.alt || photo.photoKey, to: 'removed' }])}
+                      >
+                        <input type="hidden" name="slug" value={festival.slug} />
+                        <input type="hidden" name="photo_key" value={photo.photoKey} />
+                        <button type="submit" name="intent" value="remove" class="festival-remove">Remove</button>
+                      </form>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {!full && (
+              <div class="mt-5 grid gap-4 border-t border-hairline pt-4 dark:border-slate-800 lg:grid-cols-2">
+                <form
+                  method="post"
+                  action="/api/ledger/festival-photos"
+                  enctype="multipart/form-data"
+                  class="grid gap-2"
+                  data-festival-upload
+                  data-festival-title={title}
+                >
+                  <input type="hidden" name="intent" value="upload" />
+                  <input type="hidden" name="slug" value={festival.slug} />
+                  <label class="text-sm font-medium" for={`upload-${festival.slug}`}>Upload a photo</label>
+                  <input id={`upload-${festival.slug}`} class="sheet-input" type="file" accept="image/jpeg,image/png,image/webp" data-festival-file required />
+                  <input class="sheet-input" type="text" name="alt" maxlength="200" placeholder="Short description (optional)" />
+                  <div class="flex items-center gap-3">
+                    <button type="submit" class="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-on-primary dark:bg-slate-100 dark:text-slate-950">
+                      Upload photo
+                    </button>
+                    <span class="text-xs text-mute dark:text-slate-400" data-festival-status aria-live="polite"></span>
+                  </div>
+                </form>
+
+                <form
+                  method="post"
+                  action="/api/ledger/festival-photos"
+                  class="grid gap-2"
+                  data-ledger-form
+                  data-confirm-action
+                  data-confirm-title="Add this Pexels photo?"
+                  data-confirm-copy="Each size is downloaded from Pexels the first time a visitor needs it."
+                  data-confirm-label="Add photo"
+                  data-confirm-rows={JSON.stringify([{ label: title, from: '—', to: 'Pexels photo' }])}
+                >
+                  <input type="hidden" name="slug" value={festival.slug} />
+                  <label class="text-sm font-medium" for={`link-${festival.slug}`}>Or add a Pexels photo link</label>
+                  <input
+                    id={`link-${festival.slug}`}
+                    class="sheet-input"
+                    type="url"
+                    name="url"
+                    required
+                    placeholder="https://images.pexels.com/photos/…"
+                    autocomplete="off"
+                  />
+                  <input class="sheet-input" type="text" name="alt" maxlength="200" placeholder="Short description (optional)" />
+                  <div>
+                    <button type="submit" name="intent" value="link" class="inline-flex h-11 items-center justify-center rounded-md border border-hairline px-4 text-sm font-medium dark:border-slate-700">
+                      Add link
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  </main>
+  <Footer />
+  <script src="../../scripts/ledger-actions.ts"></script>
+</Layout>

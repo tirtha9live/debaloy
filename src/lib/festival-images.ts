@@ -1,182 +1,209 @@
 import { env } from 'cloudflare:workers';
-import { claimDaily, recordJobRun } from './bank-holidays';
 import {
   FESTIVAL_IMAGE_WIDTHS,
   FESTIVAL_IMAGES_PER_FESTIVAL,
-  festivalQuery,
+  festivalVariantIndex,
   type FestivalSlug,
+  type FestivalWindow,
 } from './festivals';
 
-export const FESTIVAL_JOB = 'festival_images';
 const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
 
-export type FestivalImage = {
+export type FestivalPhoto = {
+  id: number;
   slug: FestivalSlug;
-  idx: number;
-  year: number;
+  photoKey: string;
+  source: 'pexels' | 'upload';
   sourceUrl: string;
+  /** Uploads only: widths stored in R2. */
+  widths: number[];
   alt: string;
-  photographer: string;
-  pageUrl: string;
+  year: number;
+  /** Shown instead of the rotation while set. */
+  pinned: boolean;
 };
 
 type Row = {
+  id: number;
   slug: FestivalSlug;
-  idx: number;
-  year: number;
+  photo_key: string;
+  source: 'pexels' | 'upload';
   source_url: string;
+  widths: string;
   alt: string;
-  photographer: string;
-  page_url: string;
+  year: number;
+  pinned: number;
 };
 
-type PexelsPhoto = {
-  id: number;
-  url: string;
-  alt?: string;
-  photographer?: string;
-  src?: { original?: string };
-};
+const COLUMNS = 'id, slug, photo_key, source, source_url, widths, alt, year, pinned';
 
 function bindings() {
-  return env as Cloudflare.Env & { PEXELS_API_KEY?: string };
+  return env;
 }
 
-function asImage(row: Row): FestivalImage {
+function asPhoto(row: Row): FestivalPhoto {
   return {
+    id: Number(row.id),
     slug: row.slug,
-    idx: Number(row.idx),
-    year: Number(row.year),
+    photoKey: row.photo_key,
+    source: row.source,
     sourceUrl: row.source_url,
+    widths: row.widths ? row.widths.split(',').map(Number).filter(Boolean).sort((a, b) => a - b) : [],
     alt: row.alt ?? '',
-    photographer: row.photographer ?? '',
-    pageUrl: row.page_url ?? '',
+    year: Number(row.year),
+    pinned: Boolean(row.pinned),
   };
 }
 
-export async function listFestivalImages(slug: FestivalSlug): Promise<FestivalImage[]> {
-  const rows = await bindings()
-    .DB.prepare(
-      'SELECT slug, idx, year, source_url, alt, photographer, page_url FROM festival_images WHERE slug = ? ORDER BY idx',
-    )
-    .bind(slug)
-    .all<Row>();
-  return (rows.results ?? []).map(asImage);
+/** The pinned photo if there is one, else the photo for this slot of the 7am–11pm rotation. */
+export function pickFestivalPhoto(photos: FestivalPhoto[], window: FestivalWindow, today: string, minuteOfDay: number) {
+  if (!photos.length) return null;
+  return photos.find((photo) => photo.pinned) ?? photos[festivalVariantIndex(window, today, minuteOfDay, photos.length)];
 }
 
-export async function getFestivalImage(slug: FestivalSlug, idx: number): Promise<FestivalImage | null> {
+/** Pins one photo for its festival (unpinning the rest), or clears the pin when `photoKey` is null. */
+export async function setPinnedFestivalPhoto(slug: FestivalSlug, photoKey: string | null) {
+  const database = bindings().DB;
+  if (photoKey && !(await getFestivalPhoto(slug, photoKey))) return false;
+  await database
+    .prepare('UPDATE festival_photos SET pinned = CASE WHEN photo_key = ? THEN 1 ELSE 0 END WHERE slug = ?')
+    .bind(photoKey ?? '', slug)
+    .run();
+  return true;
+}
+
+/** "https://images.pexels.com/photos/8887173/…" → "px8887173". */
+export function pexelsPhotoKey(url: string) {
+  const id = url.match(/images\.pexels\.com\/photos\/(\d+)\//)?.[1];
+  return id ? `px${id}` : null;
+}
+
+export function cleanPexelsUrl(url: string) {
+  const clean = url.trim().split('?')[0];
+  return /^https:\/\/images\.pexels\.com\/photos\/\d+\/[\w./-]+\.(jpe?g|png|webp)$/i.test(clean) ? clean : null;
+}
+
+export async function listFestivalPhotos(slug?: FestivalSlug): Promise<FestivalPhoto[]> {
+  const database = bindings().DB;
+  const rows = slug
+    ? await database.prepare(`SELECT ${COLUMNS} FROM festival_photos WHERE slug = ? ORDER BY id`).bind(slug).all<Row>()
+    : await database.prepare(`SELECT ${COLUMNS} FROM festival_photos ORDER BY slug, id`).all<Row>();
+  return (rows.results ?? []).map(asPhoto);
+}
+
+export async function getFestivalPhoto(slug: FestivalSlug, photoKey: string): Promise<FestivalPhoto | null> {
   const row = await bindings()
-    .DB.prepare(
-      'SELECT slug, idx, year, source_url, alt, photographer, page_url FROM festival_images WHERE slug = ? AND idx = ?',
-    )
-    .bind(slug, idx)
+    .DB.prepare(`SELECT ${COLUMNS} FROM festival_photos WHERE slug = ? AND photo_key = ?`)
+    .bind(slug, photoKey)
     .first<Row>();
-  return row ? asImage(row) : null;
+  return row ? asPhoto(row) : null;
 }
 
-export function festivalImagePath(image: Pick<FestivalImage, 'slug' | 'year' | 'idx'>, width: number) {
-  return `/festival-img/${image.slug}/${image.year}/${image.idx}/${width}`;
+export function festivalPhotoWidths(photo: FestivalPhoto): number[] {
+  return photo.source === 'upload' ? photo.widths : [...FESTIVAL_IMAGE_WIDTHS];
 }
 
-export function festivalSrcset(image: FestivalImage) {
-  return FESTIVAL_IMAGE_WIDTHS.map((width) => `${festivalImagePath(image, width)} ${width}w`).join(', ');
+export function festivalImagePath(photo: Pick<FestivalPhoto, 'slug' | 'photoKey'>, width: number) {
+  return `/festival-img/${photo.slug}/${photo.photoKey}/${width}`;
 }
 
-function objectKey(slug: string, year: number, idx: number, width: number) {
-  return `festivals/${slug}/${year}/${idx}-${width}.jpg`;
+export function festivalSrcset(photo: FestivalPhoto) {
+  return festivalPhotoWidths(photo)
+    .map((width) => `${festivalImagePath(photo, width)} ${width}w`)
+    .join(', ');
 }
 
-/** Pexels search through the official API (the website itself blocks servers). */
-async function searchPexels(query: string, apiKey: string): Promise<PexelsPhoto[]> {
-  const url = new URL('https://api.pexels.com/v1/search');
-  url.searchParams.set('query', query);
-  url.searchParams.set('orientation', 'landscape');
-  url.searchParams.set('per_page', String(FESTIVAL_IMAGES_PER_FESTIVAL));
-  const response = await fetch(url, { headers: { authorization: apiKey }, signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Pexels API answered ${response.status}`);
-  const body = (await response.json()) as { photos?: PexelsPhoto[] };
-  return (body.photos ?? []).filter((photo) => photo.src?.original).slice(0, FESTIVAL_IMAGES_PER_FESTIVAL);
+/** A width that exists for this photo, closest to what the browser asked for (never smaller unless none larger). */
+export function pickStoredWidth(widths: number[], requested: number) {
+  return widths.find((width) => width >= requested) ?? widths[widths.length - 1];
 }
 
-/** Replaces the saved photo list for one festival. On failure the cached photos stay. */
-export async function refreshFestivalImages(slug: FestivalSlug, year: number) {
-  const apiKey = bindings().PEXELS_API_KEY?.trim();
-  if (!apiKey) {
-    await recordJobRun('auto', 'failed', `${slug} ${year}: PEXELS_API_KEY is not set; using cached photos.`, FESTIVAL_JOB);
-    return false;
-  }
-  try {
-    const photos = await searchPexels(festivalQuery(slug), apiKey);
-    if (!photos.length) throw new Error('Pexels returned no photos');
-    const { DB, RECEIPTS } = bindings();
-    await DB.batch([
-      DB.prepare('DELETE FROM festival_images WHERE slug = ?').bind(slug),
-      ...photos.map((photo, idx) =>
-        DB.prepare(
-          `INSERT INTO festival_images (slug, idx, year, source_url, alt, photographer, page_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).bind(slug, idx, year, photo.src!.original!.split('?')[0], (photo.alt ?? '').slice(0, 200), photo.photographer ?? '', photo.url ?? ''),
-      ),
-    ]);
-    const stale = await RECEIPTS.list({ prefix: `festivals/${slug}/` });
-    const old = stale.objects.map((object) => object.key).filter((key) => !key.startsWith(`festivals/${slug}/${year}/`));
-    if (old.length) await RECEIPTS.delete(old);
-    await recordJobRun('auto', 'ok', `${slug} ${year}: saved ${photos.length} photos from Pexels.`, FESTIVAL_JOB);
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await recordJobRun('auto', 'failed', `${slug} ${year}: ${message}; using cached photos.`, FESTIVAL_JOB);
-    return false;
-  }
+function objectKey(slug: string, photoKey: string, width: number) {
+  return `festivals/${slug}/${photoKey}/${width}.jpg`;
 }
 
-/** This year's photos for the festival; refreshes once a year, keeping last year's set if Pexels fails. */
-export async function festivalImagesFor(
-  slug: FestivalSlug,
-  year: number,
-  today: string,
-  waitUntil?: (promise: Promise<unknown>) => void,
-) {
-  let images = await listFestivalImages(slug);
-  const current = images.length > 0 && images.every((image) => image.year === year);
-  // A day's "no key" attempt doesn't block a real one once the key is added that day.
-  const attempt = bindings().PEXELS_API_KEY?.trim() ? today : `${today}:no-key`;
-  // At most one refresh attempt per festival per day, so a failing source is not hit on every visit.
-  if (!current && (await claimDaily(`festival_refresh:${slug}`, attempt))) {
-    if (images.length && waitUntil) {
-      waitUntil(refreshFestivalImages(slug, year));
-    } else {
-      await Promise.race([refreshFestivalImages(slug, year), new Promise((resolve) => setTimeout(resolve, 8_000))]);
-      images = await listFestivalImages(slug);
-    }
-  }
-  return images;
-}
-
-/** Serves one width, downloading it from Pexels the first time anyone asks for it. */
-export async function festivalImageResponse(image: FestivalImage, width: number) {
+async function deleteObjectsFor(slug: string, photoKey: string) {
   const { RECEIPTS } = bindings();
-  const key = objectKey(image.slug, image.year, image.idx, width);
-  let object: R2ObjectBody | null = await RECEIPTS.get(key);
-  let contentType = object?.httpMetadata?.contentType ?? 'image/jpeg';
-  let body: ReadableStream | ArrayBuffer | null = object?.body ?? null;
+  const listed = await RECEIPTS.list({ prefix: `festivals/${slug}/${photoKey}/` });
+  const keys = listed.objects.map((object) => object.key);
+  if (keys.length) await RECEIPTS.delete(keys);
+}
 
-  if (!object) {
-    const source = `${image.sourceUrl}?auto=compress&cs=tinysrgb&w=${width}`;
-    const response = await fetch(source, { signal: AbortSignal.timeout(15_000) });
-    contentType = response.headers.get('content-type') ?? '';
-    if (!response.ok || !contentType.startsWith('image/')) return new Response('Image unavailable', { status: 502 });
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > MAX_IMAGE_BYTES) return new Response('Image too large', { status: 502 });
-    await RECEIPTS.put(key, bytes, { httpMetadata: { contentType } });
-    body = bytes;
+export async function countFestivalPhotos(slug: FestivalSlug) {
+  const row = await bindings()
+    .DB.prepare('SELECT COUNT(*) AS count FROM festival_photos WHERE slug = ?')
+    .bind(slug)
+    .first<{ count: number }>();
+  return Number(row?.count ?? 0);
+}
+
+export async function addPexelsPhoto(slug: FestivalSlug, url: string, alt: string, year: number) {
+  const clean = cleanPexelsUrl(url);
+  const key = clean && pexelsPhotoKey(clean);
+  if (!clean || !key) return { ok: false as const, reason: 'link' };
+  if ((await countFestivalPhotos(slug)) >= FESTIVAL_IMAGES_PER_FESTIVAL) return { ok: false as const, reason: 'full' };
+  const result = await bindings()
+    .DB.prepare(
+      `INSERT OR IGNORE INTO festival_photos (slug, photo_key, source, source_url, alt, year)
+       VALUES (?, ?, 'pexels', ?, ?, ?)`,
+    )
+    .bind(slug, key, clean, alt.slice(0, 200), year)
+    .run();
+  return result.meta.changes ? { ok: true as const, key } : { ok: false as const, reason: 'duplicate' };
+}
+
+/** Treasurer upload: the browser sends a few pre-sized JPEG widths; each is stored as-is. */
+export async function addUploadedPhoto(slug: FestivalSlug, files: Map<number, ArrayBuffer>, alt: string, year: number) {
+  if ((await countFestivalPhotos(slug)) >= FESTIVAL_IMAGES_PER_FESTIVAL) return { ok: false as const, reason: 'full' };
+  const key = `u${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+  const { DB, RECEIPTS } = bindings();
+  const widths = [...files.keys()].sort((a, b) => a - b);
+  for (const width of widths) {
+    await RECEIPTS.put(objectKey(slug, key, width), files.get(width)!, { httpMetadata: { contentType: 'image/jpeg' } });
+  }
+  await DB.prepare(
+    `INSERT INTO festival_photos (slug, photo_key, source, widths, alt, year) VALUES (?, ?, 'upload', ?, ?, ?)`,
+  )
+    .bind(slug, key, widths.join(','), alt.slice(0, 200), year)
+    .run();
+  return { ok: true as const, key };
+}
+
+export async function removeFestivalPhoto(slug: FestivalSlug, photoKey: string) {
+  const photo = await getFestivalPhoto(slug, photoKey);
+  if (!photo) return null;
+  await bindings().DB.prepare('DELETE FROM festival_photos WHERE id = ?').bind(photo.id).run();
+  await deleteObjectsFor(slug, photoKey);
+  return photo;
+}
+
+function imageHeaders(contentType: string) {
+  return {
+    'content-type': contentType,
+    'cache-control': 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+  };
+}
+
+/** Uploads: the stored width nearest the request. Pexels: downloads each width the first time anyone asks for it. */
+export async function festivalImageResponse(photo: FestivalPhoto, width: number) {
+  const { RECEIPTS } = bindings();
+  if (photo.source === 'upload') {
+    const stored = pickStoredWidth(photo.widths, width);
+    const object = stored ? await RECEIPTS.get(objectKey(photo.slug, photo.photoKey, stored)) : null;
+    if (!object) return new Response('Not found', { status: 404 });
+    return new Response(object.body, { headers: imageHeaders(object.httpMetadata?.contentType ?? 'image/jpeg') });
   }
 
-  return new Response(body, {
-    headers: {
-      'content-type': contentType,
-      'cache-control': 'public, max-age=31536000, immutable',
-      'x-content-type-options': 'nosniff',
-    },
-  });
+  const key = objectKey(photo.slug, photo.photoKey, width);
+  const cached = await RECEIPTS.get(key);
+  if (cached) return new Response(cached.body, { headers: imageHeaders(cached.httpMetadata?.contentType ?? 'image/jpeg') });
+
+  const response = await fetch(`${photo.sourceUrl}?auto=compress&cs=tinysrgb&w=${width}`, { signal: AbortSignal.timeout(15_000) });
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!response.ok || !contentType.startsWith('image/')) return new Response('Image unavailable', { status: 502 });
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength > MAX_IMAGE_BYTES) return new Response('Image too large', { status: 502 });
+  await RECEIPTS.put(key, bytes, { httpMetadata: { contentType } });
+  return new Response(bytes, { headers: imageHeaders(contentType) });
 }

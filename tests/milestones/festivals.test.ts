@@ -115,7 +115,6 @@ describe('festival landing calendar', () => {
     const lib = readSrc('lib/festival-images.ts');
     expect(lib).toMatch(/await RECEIPTS\.get\(key\)/);
     expect(lib).toMatch(/await RECEIPTS\.put\(key, bytes/);
-    expect(lib).toMatch(/using cached photos/);
     expect(readSrc('middleware.ts')).toMatch(/\/festival-img\//);
     const landing = readSrc('pages/index.astro');
     expect(landing).toMatch(/srcset=\{festivalSrcset/);

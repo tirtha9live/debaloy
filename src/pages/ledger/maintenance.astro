@@ -40,7 +40,7 @@ const showMode = Astro.locals.session?.role === 'admin' && !Astro.locals.viewAsR
           <span class="font-medium text-ink dark:text-slate-100">{NPR_LABEL}</span> means no payment required — paid in advance, or paid as dues at a later date. The amount is recorded in the month it was received.
         </p>
         <p>
-          <span class="sheet-legend-pending font-medium text-ink dark:text-slate-100">Payment pending</span> — blank for this month or an earlier month means not paid.
+          <span class="sheet-legend-pending font-medium text-ink dark:text-slate-100">Pending Payment / Record Updation</span> — blank for this month or an earlier month: not paid yet, or paid but not yet recorded.
         </p>
       </div>
       <section id="sheet-capture" class="card-elevate overflow-hidden rounded-xl bg-canvas dark:bg-slate-900">

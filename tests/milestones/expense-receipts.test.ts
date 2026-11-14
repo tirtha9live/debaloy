@@ -72,9 +72,17 @@ describe('expense receipts', () => {
     const sheet = readSrc('components/EntriesSheet.astro');
     expect(sheet).toMatch(/data-receipt-form/);
     expect(sheet).toMatch(/receiptHref\(/);
+    expect(sheet).toMatch(/📝/);
+    expect(sheet).toMatch(/!canEdit && !isIncome && <th class="text-center">Receipt<\/th>/);
+    expect(sheet).not.toMatch(/No receipt|View receipt <span/);
     const script = readSrc('scripts/ledger-actions.ts');
     expect(script).toMatch(/prepareReceipt/);
     expect(script).toMatch(/bindReceiptViewer/);
+    expect(script).toMatch(/data-viewer-rotate="-90"/);
+    expect(script).toMatch(/data-viewer-rotate="90"/);
+    expect(script).toMatch(/data-viewer-download/);
+    expect(script).toMatch(/context\.rotate\(/);
+    expect(readSrc('pages/api/receipts/[id].ts')).toMatch(/searchParams\.has\('download'\) \? 'attachment' : 'inline'/);
     expect(script).toMatch(/event\.key === 'Escape'/);
     expect(sheet).toMatch(/data-receipt-view/);
     expect(script).toMatch(/image\/jpeg/);

@@ -411,6 +411,7 @@ export function displaySheet(sheet: string) {
     years: 'Years',
     'e-receipts': 'E-Receipts',
     payments: 'Online payments',
+    'festival-photos': 'Festival photos',
   };
   return map[sheet] ?? sheet;
 }

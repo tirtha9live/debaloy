@@ -1,0 +1,16 @@
+{
+  "name": "debaloy-festival-photos",
+  "private": true,
+  "type": "module",
+  "description": "Finds 7 Pexels photos per festival with a real (stealth) browser and writes SQL for D1. Run on a PC; Pexels blocks servers.",
+  "scripts": {
+    "fetch": "node --experimental-strip-types fetch.mjs",
+    "apply:local": "wrangler d1 execute debaloy-ledger --local --file tools/festival-photos/out.sql",
+    "apply:remote": "wrangler d1 execute debaloy-ledger --remote --file tools/festival-photos/out.sql"
+  },
+  "dependencies": {
+    "playwright": "^1.56.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}

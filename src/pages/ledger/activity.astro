@@ -8,6 +8,8 @@ import Footer from '../../components/Footer.astro';
 
 import LedgerHeader from '../../components/LedgerHeader.astro';
 
+import AdminTabs from '../../components/AdminTabs.astro';
+
 import { ASSOCIATION } from '../../lib/constants';
 
 import { formatDateTime } from '../../lib/format';
@@ -126,6 +128,8 @@ function pathLabel(path: string) {
 
     '/ledger/bank-holidays': 'Bank holidays',
 
+    '/ledger/festival-photos': 'Festival photos',
+
   };
 
   return map[base] ?? (base.replace('/ledger/', '').replace(/-/g, ' ') || 'Page');
@@ -136,7 +140,7 @@ function pathLabel(path: string) {
 
 
 
-<Layout title={`Activity · ${ASSOCIATION}`} noindex>
+<Layout title={`Admin · Activity · ${ASSOCIATION}`} noindex>
 
   <Navigation current="activity" />
 
@@ -146,11 +150,13 @@ function pathLabel(path: string) {
 
       sheet="activity"
 
-      title="Activity."
+      title="Admin."
 
-      subtitle="Engagement by session (pages and time on site), plus a ledger change audit when someone with edit access confirms a save. Residents share one password; sessions are still separated by browser login."
+      subtitle="Engagement by session (pages and time on site), background jobs, and a ledger change audit when someone with edit access confirms a save. Residents share one password; sessions are still separated by browser login."
 
     />
+
+    <AdminTabs current="activity" />
 
 
 
@@ -159,7 +165,7 @@ function pathLabel(path: string) {
       <section>
         <h2 class="text-lg font-semibold tracking-tight" id="background-jobs">Background jobs</h2>
         <p class="mt-1 text-sm text-body dark:text-slate-300">
-          On 1 January at 10:30 IST bank holidays (HDFC) and festival dates (Drik Panchang, Kolkata) are fetched together and consolidated into the year’s festival calendar; at 18:00 IST whichever failed is fetched again and the calendar is consolidated again. Use the buttons below to force any step; every run is logged here. Festival photos refresh from Pexels once a year, the first time a festival’s window opens; on failure the cached photos stay.
+          On 1 January at 10:30 IST bank holidays (HDFC) and festival dates (Drik Panchang, Kolkata) are fetched together and consolidated into the year’s festival calendar; at 18:00 IST whichever failed is fetched again and the calendar is consolidated again. Use the buttons below to force any step; every run is logged here. Festival photos are never fetched automatically; change them under Festival photos.
         </p>
         <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
           {jobActions.map((action) => (

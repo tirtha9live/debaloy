@@ -40,7 +40,7 @@ const subtitle = canEdit
     : 'Add every expense with date, type, and amount. Attach a photo or PDF of the bill so residents can see it. Category totals on the right flow into this year’s account.'
   : isIncome
     ? 'Other receipts besides maintenance and puja contribution.'
-    : 'Payments recorded this year. Tap Receipt to see the bill where one is attached.';
+    : 'Payments recorded this year. Tap 📝 to see the bill where one is attached.';
 ---
 
 <Layout title={`${isIncome ? 'Other Collections' : 'Expenses'} · ${ASSOCIATION}`} noindex>
@@ -72,13 +72,14 @@ const subtitle = canEdit
                 <th class="text-left">Description</th>
                 <th class="text-left">Mode</th>
                 <th class="text-right">Amount (Rs.)</th>
+                {!canEdit && !isIncome && <th class="text-center">Receipt</th>}
                 {canEdit && <th></th>}
               </tr>
             </thead>
             <tbody>
               {entries.length === 0 && (
                 <tr>
-                  <td colspan={canEdit ? 6 : 5} class="whitespace-normal text-body dark:text-slate-300">No rows yet.</td>
+                  <td colspan={canEdit || !isIncome ? 6 : 5} class="whitespace-normal text-body dark:text-slate-300">No rows yet.</td>
                 </tr>
               )}
               {entries.map((entry) => (
@@ -125,18 +126,18 @@ const subtitle = canEdit
                         <div class="receipt-bar">
                           {receipts.get(entry.id) ? (
                             <a
-                              class="receipt-link"
+                              class="receipt-icon"
                               href={receiptHref(receipts.get(entry.id)!)}
                               target="_blank"
                               rel="noopener"
                               data-receipt-view={receipts.get(entry.id)!.contentType}
                               data-receipt-title={`${entry.category} · ${displayDate(entry.date)} · ${formatAmount(entry.amount)}`}
+                              aria-label={`View receipt (${formatBytes(receipts.get(entry.id)!.size)})`}
+                              title={`View receipt (${formatBytes(receipts.get(entry.id)!.size)})`}
                             >
-                              View receipt <span class="text-mute dark:text-slate-400">({formatBytes(receipts.get(entry.id)!.size)})</span>
+                              <span aria-hidden="true">📝</span>
                             </a>
-                          ) : (
-                            <span class="text-mute dark:text-slate-400">No receipt</span>
-                          )}
+                          ) : null}
                           <form
                             method="post"
                             action="/api/ledger/receipts"
@@ -166,23 +167,27 @@ const subtitle = canEdit
                     <>
                       <td>{displayDate(entry.date)}</td>
                       <td class="whitespace-normal">{entry.category}</td>
-                      <td class="max-w-xs whitespace-normal">
-                        {entry.description}
-                        {receipts.get(entry.id) && (
-                          <a
-                            class="receipt-link ml-1 inline-flex min-h-11 items-center lg:min-h-0"
-                            href={receiptHref(receipts.get(entry.id)!)}
-                            target="_blank"
-                            rel="noopener"
-                            data-receipt-view={receipts.get(entry.id)!.contentType}
-                            data-receipt-title={`${entry.category} · ${displayDate(entry.date)} · ${formatAmount(entry.amount)}`}
-                          >
-                            Receipt
-                          </a>
-                        )}
-                      </td>
+                      <td class="max-w-xs whitespace-normal">{entry.description}</td>
                       <td>{entry.mode}</td>
                       <td class="text-right tabular-nums">{formatAmount(entry.amount)}</td>
+                      {!isIncome && (
+                        <td class="text-center">
+                          {receipts.get(entry.id) && (
+                            <a
+                              class="receipt-icon"
+                              href={receiptHref(receipts.get(entry.id)!)}
+                              target="_blank"
+                              rel="noopener"
+                              data-receipt-view={receipts.get(entry.id)!.contentType}
+                              data-receipt-title={`${entry.category} · ${displayDate(entry.date)} · ${formatAmount(entry.amount)}`}
+                              aria-label={`View receipt: ${entry.category}, ${displayDate(entry.date)}`}
+                              title="View receipt"
+                            >
+                              <span aria-hidden="true">📝</span>
+                            </a>
+                          )}
+                        </td>
+                      )}
                     </>
                   )}
                 </tr>

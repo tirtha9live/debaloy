@@ -889,6 +889,21 @@ function bindReceiptViewer() {
       <div class="receipt-viewer-bar">
         <p class="receipt-viewer-title" id="receipt-viewer-title"></p>
         <a class="receipt-viewer-open" target="_blank" rel="noopener">Open in new tab</a>
+        <button type="button" class="receipt-viewer-tool" data-viewer-rotate="-90" aria-label="Rotate left" title="Rotate left">
+          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 4h4M4.6 7.6A6.5 6.5 0 1 1 3.5 11" />
+          </svg>
+        </button>
+        <button type="button" class="receipt-viewer-tool" data-viewer-rotate="90" aria-label="Rotate right" title="Rotate right">
+          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16 8V4m0 4h-4m3.4-.4A6.5 6.5 0 1 0 16.5 11" />
+          </svg>
+        </button>
+        <button type="button" class="receipt-viewer-tool" data-viewer-download aria-label="Download receipt" title="Download">
+          <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10 3v10m0 0-4-4m4 4 4-4M4 16h12" />
+          </svg>
+        </button>
         <button type="button" class="receipt-viewer-close" data-viewer-close aria-label="Close receipt">
           <svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path stroke-linecap="round" d="M5 5l10 10M15 5L5 15" />
@@ -904,9 +919,81 @@ function bindReceiptViewer() {
   const titleEl = root.querySelector<HTMLElement>('.receipt-viewer-title')!;
   const openTab = root.querySelector<HTMLAnchorElement>('.receipt-viewer-open')!;
   const closeButton = root.querySelector<HTMLButtonElement>('.receipt-viewer-close')!;
+  const rotateButtons = [...root.querySelectorAll<HTMLButtonElement>('[data-viewer-rotate]')];
+  const downloadButton = root.querySelector<HTMLButtonElement>('[data-viewer-download]')!;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
   let opener: HTMLAnchorElement | null = null;
   let closing = false;
+  let angle = 0;
+
+  const currentImage = () => body.querySelector<HTMLImageElement>('.receipt-viewer-image');
+
+  /** Turned sideways, the photo must fit the body with width and height swapped. */
+  const applyRotation = () => {
+    const image = currentImage();
+    if (!image) return;
+    const sideways = Math.abs(angle % 180) === 90;
+    image.style.transform = angle ? `rotate(${angle}deg)` : '';
+    image.style.maxWidth = sideways ? `${body.clientHeight}px` : '';
+    image.style.maxHeight = sideways ? `${body.clientWidth}px` : '';
+  };
+
+  const fileBase = () =>
+    `receipt-${(titleEl.textContent || 'receipt')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 80)}`;
+
+  const saveFile = (href: string, name: string) => {
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.download = name;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  };
+
+  /** Original file, or the photo as currently rotated. */
+  const download = async () => {
+    if (!opener) return;
+    const image = currentImage();
+    const type = opener.dataset.receiptView ?? '';
+    const ext = type === 'application/pdf' ? 'pdf' : type.split('/')[1] || 'jpg';
+    const turn = ((angle % 360) + 360) % 360;
+    if (!image || !turn) {
+      const url = new URL(opener.href);
+      url.searchParams.set('download', '1');
+      saveFile(url.toString(), `${fileBase()}.${ext}`);
+      return;
+    }
+    await image.decode().catch(() => undefined);
+    const canvas = document.createElement('canvas');
+    const sideways = turn === 90 || turn === 270;
+    canvas.width = sideways ? image.naturalHeight : image.naturalWidth;
+    canvas.height = sideways ? image.naturalWidth : image.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.translate(canvas.width / 2, canvas.height / 2);
+    context.rotate((turn * Math.PI) / 180);
+    context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    if (!blob) return;
+    const href = URL.createObjectURL(blob);
+    saveFile(href, `${fileBase()}-rotated.jpg`);
+    setTimeout(() => URL.revokeObjectURL(href), 10_000);
+  };
+
+  rotateButtons.forEach((button) =>
+    button.addEventListener('click', () => {
+      angle += Number(button.dataset.viewerRotate) || 0;
+      applyRotation();
+    }),
+  );
+  downloadButton.addEventListener('click', () => void download());
+  window.addEventListener('resize', () => {
+    if (!root.hidden) applyRotation();
+  });
 
   const originFrom = (link: HTMLElement) => {
     const box = link.getBoundingClientRect();
@@ -920,9 +1007,11 @@ function bindReceiptViewer() {
   const open = (link: HTMLAnchorElement) => {
     opener = link;
     closing = false;
+    angle = 0;
     const type = link.dataset.receiptView ?? '';
     titleEl.textContent = link.dataset.receiptTitle || 'Receipt';
     openTab.href = link.href;
+    rotateButtons.forEach((button) => (button.hidden = type === 'application/pdf'));
     body.replaceChildren();
     if (type === 'application/pdf') {
       const frame = document.createElement('iframe');
@@ -982,8 +1071,8 @@ function bindReceiptViewer() {
       return;
     }
     if (event.key === 'Tab') {
-      const focusables = [openTab, closeButton];
-      const index = focusables.indexOf(document.activeElement as HTMLAnchorElement & HTMLButtonElement);
+      const focusables: HTMLElement[] = [openTab, ...rotateButtons.filter((button) => !button.hidden), downloadButton, closeButton];
+      const index = focusables.indexOf(document.activeElement as HTMLElement);
       event.preventDefault();
       const next = event.shiftKey ? (index <= 0 ? focusables.length - 1 : index - 1) : (index + 1) % focusables.length;
       focusables[next].focus();
@@ -992,3 +1081,85 @@ function bindReceiptViewer() {
 }
 
 bindReceiptViewer();
+
+const FESTIVAL_UPLOAD_WIDTHS = [400, 800, 1200, 1600];
+const FESTIVAL_FALLBACK_WIDTHS = [300, 150];
+
+/** Landing photos: a few JPEG widths made in the browser, so the server never resizes. */
+async function festivalPhotoVariants(file: File) {
+  const decoded = await decodeImage(file);
+  let widths = FESTIVAL_UPLOAD_WIDTHS.filter((width) => width <= decoded.width);
+  if (!widths.length) widths = FESTIVAL_FALLBACK_WIDTHS.filter((width) => width <= decoded.width).slice(0, 1);
+  if (!widths.length) throw new Error('This photo is too small. Choose one at least 150 pixels wide.');
+  const variants: Array<{ width: number; blob: Blob }> = [];
+  for (const width of widths) {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = Math.round((decoded.height * width) / decoded.width);
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('This browser cannot prepare photos. Try another browser.');
+    context.drawImage(decoded.source, 0, 0, canvas.width, canvas.height);
+    let blob: Blob | null = null;
+    for (const quality of [0.82, 0.72, 0.6]) {
+      blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+      if (blob && blob.size <= RECEIPT_IMAGE_MAX_BYTES) break;
+    }
+    if (!blob || blob.size > RECEIPT_IMAGE_MAX_BYTES) throw new Error('This photo is too large even after compression.');
+    variants.push({ width, blob });
+  }
+  return variants;
+}
+
+function bindFestivalUploads() {
+  document.querySelectorAll<HTMLFormElement>('form[data-festival-upload]').forEach((form) => {
+    const input = form.querySelector<HTMLInputElement>('[data-festival-file]');
+    const status = form.querySelector<HTMLElement>('[data-festival-status]');
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const file = input?.files?.[0];
+      if (!file) return;
+      if (status) status.textContent = 'Preparing…';
+      let variants: Array<{ width: number; blob: Blob }>;
+      try {
+        variants = await festivalPhotoVariants(file);
+      } catch (error) {
+        if (status) status.textContent = '';
+        openConfirm({
+          title: 'Cannot use this photo',
+          copy: error instanceof Error ? error.message : 'Choose another photo.',
+          rows: [],
+          confirmLabel: 'OK',
+          onConfirm: () => undefined,
+        });
+        return;
+      }
+      if (status) status.textContent = '';
+      const total = variants.reduce((sum, variant) => sum + variant.blob.size, 0);
+      openConfirm({
+        title: 'Upload this festival photo?',
+        copy: 'It joins the rotation on the landing page for this festival.',
+        rows: [
+          {
+            label: form.dataset.festivalTitle ?? 'Festival',
+            from: '—',
+            to: `${file.name} (${variants.map((variant) => variant.width).join(', ')} px · ${formatBytes(total)})`,
+          },
+        ],
+        confirmLabel: 'Upload photo',
+        onConfirm: async () => {
+          if (status) status.textContent = 'Uploading…';
+          const body = new FormData(form);
+          for (const variant of variants) body.set(`w${variant.width}`, variant.blob, `w${variant.width}.jpg`);
+          try {
+            const response = await fetch(form.action, { method: 'POST', body, credentials: 'same-origin' });
+            window.location.assign(response.url || window.location.href);
+          } catch {
+            if (status) status.textContent = 'Upload failed. Check your connection and try again.';
+          }
+        },
+      });
+    });
+  });
+}
+
+bindFestivalUploads();

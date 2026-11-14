@@ -1,0 +1,28 @@
+---
+interface Props {
+  current: 'activity' | 'festival-photos';
+}
+
+const { current } = Astro.props;
+const tabs = [
+  { id: 'activity', href: '/ledger/activity', label: 'Activity' },
+  { id: 'festival-photos', href: '/ledger/festival-photos', label: 'Festival photos' },
+] as const;
+---
+
+<nav class="mt-6 flex gap-1 overflow-x-auto border-b border-hairline dark:border-slate-800" aria-label="Admin sections">
+  {tabs.map((tab) => (
+    <a
+      href={tab.href}
+      class:list={[
+        '-mb-px inline-flex min-h-11 items-center whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-colors duration-200',
+        tab.id === current
+          ? 'border-ink text-ink dark:border-slate-100 dark:text-slate-100'
+          : 'border-transparent text-body hover:text-ink dark:text-slate-400 dark:hover:text-slate-100',
+      ]}
+      aria-current={tab.id === current ? 'page' : undefined}
+    >
+      {tab.label}
+    </a>
+  ))}
+</nav>

@@ -15,9 +15,9 @@ const groupedAccount = bank.accountNumber.replace(/(\d{4})(?=\d)/g, '$1 ');
   aria-labelledby="bank-details-title"
   data-bank-details
 >
-  <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Pay the association</p>
+  <p class="font-mono text-xs uppercase tracking-[0.16em] text-mute dark:text-slate-400">Association Bank account</p>
   <h2 id="bank-details-title" class:list={['mt-2 font-semibold tracking-tight', compact ? 'text-base' : 'text-lg']}>
-    {bank.bank} · NEFT / IMPS / RTGS
+    {bank.bank}
   </h2>
 
   <dl class:list={['mt-3 grid gap-x-6 gap-y-3 text-sm', compact ? 'sm:grid-cols-3' : 'sm:grid-cols-2']}>
@@ -54,7 +54,7 @@ const groupedAccount = bank.accountNumber.replace(/(\d{4})(?=\d)/g, '$1 ');
   </dl>
 
   <p class="mt-3 text-xs leading-5 text-mute dark:text-slate-400">
-    Please mention your flat number in the transfer remarks, then let the treasurer know.
+    Please mention your flat number in the transfer remarks.
   </p>
 </section>
 

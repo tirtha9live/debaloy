@@ -33,6 +33,11 @@ describe('server-side ledger audit', () => {
     { file: 'pages/api/ledger/categories.ts', awaitCalls: ['createCategory'], publishSheet: 'categories' },
     { file: 'pages/api/ledger/e-receipts.ts', awaitCalls: ['saveFlatMobile'], publishSheet: 'e-receipts' },
     {
+      file: 'pages/api/ledger/festival-photos.ts',
+      awaitCalls: ['removeFestivalPhoto'],
+      publishSheet: 'festival-photos',
+    },
+    {
       file: 'pages/api/ledger/receipts.ts',
       awaitCalls: ['deleteReceiptForEntry', 'saveReceipt'],
       publishSheet: 'entries',

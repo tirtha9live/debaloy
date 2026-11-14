@@ -2,7 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getReceipt, receiptRateLimited } from '../../../lib/receipts';
 
-export const GET: APIRoute = async ({ params, locals }) => {
+export const GET: APIRoute = async ({ params, locals, url }) => {
   if (!locals.session) return new Response('Unauthorised', { status: 401 });
   const id = Number(params.id);
   if (!Number.isInteger(id) || id <= 0) return new Response('Not found', { status: 404 });
@@ -23,7 +23,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
   const headers = new Headers({
     'content-type': receipt.contentType,
     'content-length': String(object.size),
-    'content-disposition': `inline; filename="receipt-${receipt.entryId}.${ext}"`,
+    'content-disposition': `${url.searchParams.has('download') ? 'attachment' : 'inline'}; filename="receipt-${receipt.entryId}.${ext}"`,
     'cache-control': 'private, max-age=3600',
     'x-content-type-options': 'nosniff',
     'x-robots-tag': 'noindex',
